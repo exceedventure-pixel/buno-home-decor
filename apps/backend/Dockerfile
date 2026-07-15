@@ -2,7 +2,21 @@ FROM node:20
 
 WORKDIR /app
 
-# Build stage: install full deps in /app and run medusa build
+# Build stage: install full deps in /app and run medusa build.
+#
+# NOTE: there is no package-lock.json in this context (the only lockfile is the monorepo root's,
+# and the build context is apps/backend). So this install re-resolves the whole tree to the
+# newest versions matching every semver range, on every build — meaning this image can break
+# with no change to our code at all.
+#
+# It already did once: @medusajs/dashboard depends on "@ariakit/react": "^0.4.15", and
+# @ariakit/react@0.4.33 shipped an internal import of "@ariakit/react-components/tab/tab" that
+# doesn't resolve, so the admin bundle failed to build hours after that version was published.
+# Hence the "@ariakit/react" pin in package.json — npm honours `overrides` here because in this
+# image apps/backend/package.json IS the install root.
+#
+# The real fix is to build with the lockfile (see the monorepo root) rather than pin upstream
+# packages one at a time as they break.
 COPY package*.json ./
 RUN npm install --no-audit --no-fund
 
