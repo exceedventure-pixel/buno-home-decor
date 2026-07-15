@@ -158,14 +158,26 @@ export type Dashboard = {
   profit: {
     range: { from: string; to: string }
     revenue: number
+    /** Everything the goods cost: FIFO off the shelf PLUS made-to-order production cost. */
     cogs: number
+    /** The FIFO half alone — what came off a shelf. */
+    cogs_fifo: number
+    /** The made-to-order half. Inside `cogs`, deliberately NOT in operating expenses. */
+    production_cost: number
     gross_profit: number
     marketing: number
+    /** Inside `delivery_margin`, deliberately NOT in operating expenses. */
     courier_fee: number
     other_expense: number
     refund: number
     packaging_used: number
     inventory_adjustments: number
+    other_income: number
+    delivery_charged: number
+    courier_cost: number
+    /** What carrying parcels actually earned: charged − courier. */
+    delivery_margin: number
+    /** Overhead only — marketing + other + refunds + packaging + write-offs. */
     operating_expenses: number
     net_profit: number
     net_margin_pct: number

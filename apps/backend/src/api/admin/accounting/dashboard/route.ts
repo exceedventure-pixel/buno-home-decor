@@ -94,7 +94,26 @@ export async function GET(
   // non-cash P&L cost derived from the FIFO replay, exactly like packaging.
   const inventory_adjustments =
     periodSales.metrics.inventory_writeoff - periodSales.metrics.inventory_found
-  const gross = periodSales.metrics.gross_profit
+
+  /**
+   * PRODUCTION COST IS COST OF GOODS, NOT OVERHEAD.
+   *
+   * `periodSales.metrics.cogs` is the FIFO replay, and FIFO only knows about things that came
+   * off a shelf. A pre-order/custom item never touched inventory — there is no batch to draw
+   * from — so it contributes NOTHING there, and its cost reaches us only through the ledger.
+   *
+   * Left in operating expenses, the maths still nets out (it is subtracted exactly once), but
+   * gross profit becomes a lie: revenue counted against zero cost. Sell a custom piece for
+   * 1,000 that cost 400 to make and the dashboard claims a 100% gross margin, then quietly
+   * removes the 400 further down. Net right, gross fiction.
+   *
+   * So it is added to COGS and taken out of overhead below. Net profit is unchanged — this is a
+   * reclassification, not a correction — and it makes this page agree with Sales Insights, which
+   * has always counted it this way.
+   */
+  const production_cost = periodExpenses.production_cost
+  const cogs = periodSales.metrics.cogs + production_cost
+  const gross = periodSales.metrics.product_revenue - cogs
 
   /**
    * DELIVERY IS BOTH SIDES OF A TRADE, and this used to only count one of them.
@@ -110,8 +129,32 @@ export async function GET(
 
   // Money in that isn't a sale — courier compensation for a destroyed parcel, scrap. Real income.
   const other_income = pnlIncome(periodRows)
-  const operating_expenses = periodExpenses.total + packaging_used_period + inventory_adjustments
-  const net_profit = gross + delivery_charged + other_income - operating_expenses
+
+  /**
+   * OVERHEAD ONLY — the costs that do NOT move when you sell one more thing.
+   *
+   * Two are deliberately absent, and both for the same reason: they are already counted, netted
+   * against the revenue they belong to.
+   *
+   *   production_cost — now inside COGS, above.
+   *   courier_fee     — now inside `delivery_margin`. Carrying a parcel is a TRADE, not a cost:
+   *                     the customer paid for delivery too. Charging the full 60 to overhead
+   *                     while adding the full 100 to revenue nets the same, but makes every
+   *                     parcel read as a pure expense and buries whether delivery earns or
+   *                     loses. Only the overcharge — what's left after paying the courier — is
+   *                     a real result.
+   *
+   * Counting either here as well as there would charge every pre-order for its production twice
+   * and every parcel for its courier twice.
+   */
+  const operating_expenses =
+    periodExpenses.total -
+    production_cost -
+    courier_cost +
+    packaging_used_period +
+    inventory_adjustments
+
+  const net_profit = gross + delivery_margin + other_income - operating_expenses
 
   res.json({
     currency_code: lifetimeSales.currency_code ?? "bdt",
@@ -165,7 +208,11 @@ export async function GET(
     profit: {
       range: { from: pnlFrom.toISOString(), to: pnlTo.toISOString() },
       revenue: periodSales.metrics.product_revenue,
-      cogs: periodSales.metrics.cogs,
+      // Both halves of what the goods cost: FIFO for anything off the shelf, plus the
+      // per-order production cost for made-to-order, which never had a shelf to come off.
+      cogs,
+      cogs_fifo: periodSales.metrics.cogs,
+      production_cost,
       gross_profit: gross,
       marketing: periodExpenses.marketing,
       courier_fee: periodExpenses.courier_fee,

@@ -1,5 +1,5 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 
 import { ACCOUNTING_MODULE } from "../../../modules/accounting"
 import { PRODUCT_COST_MODULE } from "../../../modules/productCost"
@@ -57,6 +57,35 @@ async function clearAllReservations(scope: any): Promise<number> {
     if (items.length < PAGE) break
   }
   return deleted
+}
+
+/**
+ * Send order numbering back to #1.
+ *
+ * `display_id` is a Postgres SERIAL, and a sequence knows nothing about the rows in the table.
+ * Deleting every order leaves it exactly where it stopped, so the first order after a "reset the
+ * store" arrives as #48 — which reads as though the reset silently failed.
+ *
+ * Two things make this safe rather than reckless:
+ *
+ *   The sequence is resolved, not guessed. SERIAL makes the sequence OWNED BY the column, so
+ *   pg_get_serial_sequence finds whatever it is actually called — no name to drift out of date.
+ *
+ *   Reusing numbers cannot collide. The reset only SOFT-deletes orders, so the old #1 is still
+ *   physically in the table. That's fine: IDX_order_display_id is deliberately `unique: false`
+ *   and scoped to `deleted_at IS NULL`, so a live #1 and a deleted #1 coexist happily. If that
+ *   index ever becomes unique, this has to become a hard delete instead.
+ */
+async function restartOrderNumbering(scope: any): Promise<boolean> {
+  const pg = scope.resolve(ContainerRegistrationKeys.PG_CONNECTION) as any
+
+  const found = await pg.raw(`select pg_get_serial_sequence('"order"', 'display_id') as seq`)
+  const seq = found?.rows?.[0]?.seq
+  if (!seq) return false
+
+  // is_called=false, so the next nextval() hands out 1 itself rather than starting at 2.
+  await pg.raw(`select setval(?, 1, false)`, [seq])
+  return true
 }
 
 /** Force every stock level to a fixed quantity. */
@@ -249,12 +278,23 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         errors.reservations = e.message
       }
 
+      // Numbering restarts only once the orders are actually gone — renumbering a store that
+      // still has live orders would hand out #1 alongside an existing #1.
+      let numberingRestarted = false
+      try {
+        numberingRestarted = await restartOrderNumbering(req.scope)
+      } catch (e: any) {
+        errors.order_numbering = e.message
+        logger?.error(`[store-reset] order numbering failed: ${e.message}`)
+      }
+
       summary.orders = {
         orders: orderIds.length,
         returns: returnIds.length,
         exchanges: exchangeIds.length,
         carts: cartCount,
         reservations_cleared: reservationsCleared,
+        numbering_restarted: numberingRestarted,
       }
     } catch (e: any) {
       errors.orders = e.message

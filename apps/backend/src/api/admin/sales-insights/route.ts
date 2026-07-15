@@ -102,6 +102,17 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       by_status: countBy((o) => o.order_status),
       by_payment: countBy((o) => o.payment_status),
       by_issue: countBy((o) => o.issue_status),
+      /**
+       * How the orders were SOLD, which is the split that changes how the shop runs: ready stock
+       * comes off a shelf, pre-order and custom get made. Zero-filled so a type with no orders
+       * still reports 0 rather than vanishing from the counters.
+       */
+      by_type: {
+        ready_stock: 0,
+        pre_order: 0,
+        custom: 0,
+        ...countBy((o) => o.order_type),
+      },
     },
 
     /** The parcels that lost money — the whole point of a per-order P&L. */

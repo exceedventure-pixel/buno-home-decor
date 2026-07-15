@@ -40,8 +40,44 @@ type Insights = {
     by_status: Record<string, number>
     by_payment: Record<string, number>
     by_issue: Record<string, number>
+    by_type: { ready_stock: number; pre_order: number; custom: number }
   }
   loss_making: OrderRow[]
+}
+
+/** A plain count — no currency, no accent maths. Distinct enough from Kpi to keep both simple. */
+function Count({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string
+  value: number
+  hint?: string
+  accent?: "green" | "red" | "orange" | "base"
+}) {
+  const color =
+    accent === "red" && value > 0
+      ? "text-ui-tag-red-text"
+      : accent === "orange" && value > 0
+        ? "text-ui-tag-orange-text"
+        : accent === "green" && value > 0
+          ? "text-ui-tag-green-text"
+          : "text-ui-fg-base"
+  return (
+    <div className="flex flex-col gap-y-1 rounded-lg border border-ui-border-base p-4">
+      <Text size="xsmall" className="text-ui-fg-muted">
+        {label}
+      </Text>
+      <Text className={`text-xl font-semibold ${color}`}>{value}</Text>
+      {hint && (
+        <Text size="xsmall" className="text-ui-fg-muted">
+          {hint}
+        </Text>
+      )}
+    </div>
+  )
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10)
@@ -145,6 +181,36 @@ const SalesInsightsPage = () => {
           </Text>
         ) : (
           <>
+            {/* How many, and of what kind — the shape of the period before any money talk. */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+              <Count label="Total orders" value={data.order_count} hint="in this range" />
+              <Count
+                label="Ready stock"
+                value={data.breakdown.by_type.ready_stock}
+                hint="off the shelf"
+              />
+              <Count label="Pre-orders" value={data.breakdown.by_type.pre_order} hint="made to order" />
+              <Count label="Custom" value={data.breakdown.by_type.custom} hint="made to order" />
+              <Count
+                label="Returned"
+                value={data.breakdown.by_status.returned ?? 0}
+                hint="came back to stock"
+                accent="orange"
+              />
+              <Count
+                label="Refunded"
+                value={data.breakdown.by_status.refunded ?? 0}
+                hint="money given back"
+                accent="red"
+              />
+              <Count
+                label="Damaged"
+                value={data.breakdown.by_issue.damaged ?? 0}
+                hint="written off, not restocked"
+                accent="red"
+              />
+            </div>
+
             {/* Headline */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
               <Kpi label="Product revenue" value={money(data.revenue.product, cur)} hint={`${data.order_count} orders`} />

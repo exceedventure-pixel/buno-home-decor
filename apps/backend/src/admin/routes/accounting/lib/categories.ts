@@ -7,7 +7,7 @@
  * and helper text. Keep the two in sync when categories change.
  */
 
-export type LedgerClass = "equity" | "asset" | "expense"
+export type LedgerClass = "equity" | "asset" | "expense" | "income"
 
 export type CategoryMeta = {
   label: string
@@ -86,12 +86,32 @@ export const CATEGORY_META: Record<string, CategoryMeta> = {
       "ONLY for cash you refunded outside Medusa. A return recorded in Medusa is already " +
       "netted out of revenue and cash — journaling it here as well subtracts it twice.",
   },
+  production_cost: {
+    label: "Production cost (pre-order / custom)",
+    klass: "expense",
+    direction: "out",
+    help:
+      "What a made-to-order item cost to produce. Set on the order, never here — it is that " +
+      "order's cost of goods, so it counts inside COGS rather than as overhead.",
+  },
+  other_income: {
+    label: "Other income",
+    klass: "income",
+    direction: "in",
+    help:
+      "Money in that isn't a sale and isn't partner capital: a courier compensating you for a " +
+      "parcel they destroyed, scrap sales, a supplier credit. Real income — it lifts profit.",
+  },
 }
 
+// Every class the backend can send. A missing one is not a cosmetic gap: the Cash Book reads
+// KLASS_BADGE[row.klass] straight off the API response, so an unmapped class takes the whole
+// table down with it.
 export const KLASS_BADGE: Record<LedgerClass, { label: string; color: "green" | "blue" | "grey" | "red" | "orange" }> = {
   equity: { label: "Equity", color: "grey" },
   asset: { label: "Asset — not an expense", color: "blue" },
   expense: { label: "Expense", color: "red" },
+  income: { label: "Income", color: "green" },
 }
 
 export const PARTNER_REQUIRED = ["capital_contribution", "partner_drawing"]

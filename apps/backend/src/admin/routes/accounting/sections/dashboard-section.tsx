@@ -129,13 +129,23 @@ export function DashboardSection() {
             {new Date(p.range.to).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
           </Badge>
         </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Kpi label="Revenue" value={money(p.revenue, cur)} />
-          <Kpi label="Gross profit" value={money(p.gross_profit, cur)} hint="Revenue − COGS" />
+          <Kpi
+            label="Gross profit"
+            value={money(p.gross_profit, cur)}
+            hint="Revenue − COGS (incl. production cost)"
+          />
+          <Kpi
+            label="Delivery margin"
+            value={money(p.delivery_margin, cur)}
+            hint="Charged − what the courier cost"
+            accent={p.delivery_margin >= 0 ? "green" : "red"}
+          />
           <Kpi
             label="Operating expenses"
             value={money(p.operating_expenses, cur)}
-            hint="Marketing + courier + other + refunds + packaging + write-offs"
+            hint="Marketing + other + refunds + packaging + write-offs"
             accent="red"
           />
           <Kpi

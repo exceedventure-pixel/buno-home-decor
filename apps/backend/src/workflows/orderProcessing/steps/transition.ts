@@ -1,7 +1,7 @@
 import {
   cancelOrderWorkflow,
-  capturePaymentWorkflow,
   createOrderFulfillmentWorkflow,
+  markOrderFulfillmentAsDeliveredWorkflow,
   refundPaymentWorkflow,
 } from "@medusajs/core-flows"
 import type { MedusaContainer } from "@medusajs/framework/types"
@@ -124,8 +124,9 @@ export const transitionOrderStep = createStep(
     }
 
     if (input.to === "delivered") {
-      // Collect the money. For COD this is the cash the courier handed over.
-      await captureOutstanding(container, input.order_id)
+      // Tell Medusa the parcel arrived. That is the whole action — marking it delivered emits
+      // `delivery.created`, and the subscriber on that event collects the cash. See markDelivered.
+      await markDelivered(container, input.order_id)
     }
 
     if (input.to === "returned") {
@@ -193,30 +194,40 @@ export const transitionOrderStep = createStep(
 
 /* --------------------------------- payment helpers --------------------------------- */
 
-/** Capture every authorised-but-uncaptured payment — the COD balance landing in the books. */
-async function captureOutstanding(container: MedusaContainer, orderId: string) {
+/**
+ * Mark the parcel delivered IN MEDUSA — which is the only place "delivered" is true.
+ *
+ * Our status is derived from Medusa's `delivered_quantity`, so this is not bookkeeping on the
+ * side: without it, moving to Delivered here would leave Medusa thinking the parcel is still out,
+ * the derived status would fall straight back to Dispatched, and the two screens would disagree.
+ *
+ * Doing it through Medusa's own workflow is also what puts the two buttons in sync. This one and
+ * Medusa's native "Mark as delivered" now run the SAME code and emit the SAME `delivery.created`
+ * event — so the cash gets collected once, whichever one you press.
+ */
+async function markDelivered(container: MedusaContainer, orderId: string) {
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const { data } = await query.graph({
     entity: "order",
-    fields: [
-      "id",
-      "payment_collections.payments.id",
-      "payment_collections.payments.amount",
-      "payment_collections.payments.captured_at",
-      "payment_collections.payments.canceled_at",
-    ],
+    fields: ["id", "fulfillments.id", "fulfillments.delivered_at", "fulfillments.canceled_at"],
     filters: { id: orderId },
   })
 
-  const payments = ((data?.[0] as any)?.payment_collections ?? []).flatMap(
-    (pc: any) => pc.payments ?? []
+  const pending = ((data?.[0] as any)?.fulfillments ?? []).filter(
+    (f: any) => !f.delivered_at && !f.canceled_at
   )
-  const uncaptured = payments.filter((p: any) => !p.captured_at && !p.canceled_at)
 
-  // Not an error: a prepaid order is already captured, and the status is still legitimately
-  // "Delivered". We just have nothing to collect.
-  for (const p of uncaptured) {
-    await capturePaymentWorkflow(container).run({ input: { payment_id: p.id } })
+  if (!pending.length) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      "Nothing on this order is out for delivery — every parcel is already delivered or cancelled."
+    )
+  }
+
+  for (const f of pending) {
+    await markOrderFulfillmentAsDeliveredWorkflow(container).run({
+      input: { orderId, fulfillmentId: f.id },
+    })
   }
 }
 

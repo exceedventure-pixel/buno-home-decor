@@ -53,7 +53,11 @@ export function DangerZoneSection() {
       const parts: string[] = []
       if (result.summary?.inventory) parts.push(`inventory → ${result.summary.inventory.set_to} (${result.summary.inventory.levels_updated} levels, ${result.summary.inventory.batches_deleted} batches)`)
       if (result.summary?.accounting) parts.push(`${result.summary.accounting.ledger_entries} ledger entries`)
-      if (result.summary?.orders) parts.push(`${result.summary.orders.orders} orders, ${result.summary.orders.carts} carts`)
+      if (result.summary?.orders)
+        parts.push(
+          `${result.summary.orders.orders} orders, ${result.summary.orders.carts} carts` +
+            (result.summary.orders.numbering_restarted ? " (next order is #1)" : "")
+        )
       if (result.summary?.customers) parts.push(`${result.summary.customers.customers} customers`)
       if (result.summary?.products) parts.push(`${result.summary.products.products} products`)
       if (result.success) {
@@ -112,7 +116,7 @@ export function DangerZoneSection() {
         <div className="flex items-center justify-between border-t border-ui-border-base pt-4">
           <div>
             <Text size="small" weight="plus">Reset orders & sales data</Text>
-            <Text size="xsmall" className="text-ui-fg-muted">Deletes orders, draft orders, carts, and returns/exchanges. Sales insights reset to zero.</Text>
+            <Text size="xsmall" className="text-ui-fg-muted">Deletes orders, draft orders, carts, and returns/exchanges. Sales insights reset to zero, and order numbering starts again at #1.</Text>
           </div>
           <Switch checked={ordersEnabled} onCheckedChange={setOrdersEnabled} disabled={busy} />
         </div>
