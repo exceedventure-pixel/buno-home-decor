@@ -22,7 +22,9 @@ import {
   ORDER_TYPE_META,
   PAYMENT_STATUS_META,
   TRANSITION_EFFECT,
+  isExceptionStatus,
   opApi,
+  pipelineFor,
   type IssueStatusKey,
   type OrderStatusKey,
 } from "../lib/order-processing-api"
@@ -59,9 +61,15 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
     setProdCost(String(o.production_cost ?? 0))
   }, [o?.courier_cost, o?.delivery_charged, o?.production_cost]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * A status change moves real stock and cash, so Medusa's own panels on this page (summary,
+   * payment, fulfilment) are stale the moment ours succeeds. They're React Query too, and the
+   * dashboard keys everything under "orders" — so invalidating that prefix makes them refetch
+   * in place. This used to call location.reload(), which threw away the whole page to do it.
+   */
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["order-processing"] })
-    setTimeout(() => location.reload(), 700) // Medusa's own order panels must re-read too
+    qc.invalidateQueries({ queryKey: ["orders"] })
   }
 
   const move = useMutation({
@@ -128,6 +136,10 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   const next = data?.allowed_next ?? []
   const rates = data?.courier_rates ?? []
 
+  const pipeline = pipelineFor(o.order_type)
+  const exceptionNext = next.filter(isExceptionStatus)
+  const offTheLine = isExceptionStatus(o.order_status)
+
   const feeNum = Number(fee) || 0
   const deliveryNum = Number(deliveryCharged) || 0
   const margin = deliveryNum - feeNum
@@ -168,16 +180,41 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
         </Text>
       )}
 
-      {/* Move it on */}
-      {next.length > 0 && (
+      {/* Where it is on the line, and where it can go next */}
+      <div className="flex flex-col gap-y-3 border-t border-ui-border-base pt-4">
+        <Label size="small">Progress</Label>
+
+        {offTheLine && (
+          <div className="rounded-lg bg-ui-bg-subtle p-2.5">
+            <Text size="xsmall">
+              <Badge size="2xsmall" color={os.color}>
+                {os.label}
+              </Badge>{" "}
+              {o.order_status === "on_hold"
+                ? "— paused. Pick a step below to put it back on the line."
+                : "— this order came off the line."}
+            </Text>
+          </div>
+        )}
+
+        <Timeline
+          pipeline={pipeline}
+          current={o.order_status}
+          allowedNext={next}
+          onPick={setPending}
+        />
+      </div>
+
+      {/* The exits. Not steps on the line, so they don't belong on the timeline. */}
+      {exceptionNext.length > 0 && (
         <div className="flex flex-col gap-y-2">
-          <Label size="small">Move to</Label>
+          <Label size="small">Something went wrong?</Label>
           <div className="flex flex-wrap gap-1.5">
-            {next.map((s) => (
+            {exceptionNext.map((s) => (
               <Button
                 key={s}
                 size="small"
-                variant={s === "cancelled" ? "danger" : "secondary"}
+                variant={s === "cancelled" || s === "refunded" ? "danger" : "secondary"}
                 onClick={() => setPending(s)}
               >
                 {ORDER_STATUS_META[s].label}
@@ -340,6 +377,81 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
         </Prompt.Content>
       </Prompt>
     </Container>
+  )
+}
+
+/**
+ * The pipeline drawn as a line: what's done, where it is now, and what's still ahead — so the
+ * whole journey is visible at a glance instead of inferred from a lone badge.
+ *
+ * Only steps the guards actually allow are clickable. An upcoming step with no button isn't
+ * broken; it's simply not reachable from here yet (you can't deliver what never shipped).
+ */
+function Timeline({
+  pipeline,
+  current,
+  allowedNext,
+  onPick,
+}: {
+  pipeline: OrderStatusKey[]
+  current: OrderStatusKey
+  allowedNext: OrderStatusKey[]
+  onPick: (s: OrderStatusKey) => void
+}) {
+  // -1 when the order is off the line (On Hold, Cancelled…): nothing reads as current, and every
+  // step reads as "not yet" rather than falsely as "done".
+  const currentIdx = pipeline.indexOf(current)
+
+  return (
+    <ol className="flex flex-col">
+      {pipeline.map((s, i) => {
+        const done = currentIdx >= 0 && i < currentIdx
+        const isCurrent = i === currentIdx
+        const canMove = allowedNext.includes(s)
+        const isLast = i === pipeline.length - 1
+
+        return (
+          <li key={s} className="flex gap-x-3">
+            <div className="flex flex-col items-center">
+              <span
+                className={
+                  isCurrent
+                    ? "mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-ui-fg-base ring-2 ring-ui-fg-base ring-offset-2 ring-offset-ui-bg-base"
+                    : done
+                      ? "mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-ui-fg-muted"
+                      : "mt-1 h-2.5 w-2.5 shrink-0 rounded-full border border-ui-border-strong bg-ui-bg-base"
+                }
+              />
+              {!isLast && (
+                <span
+                  className={`w-px flex-1 ${done ? "bg-ui-fg-muted" : "bg-ui-border-base"}`}
+                />
+              )}
+            </div>
+
+            <div className={`flex min-h-[28px] flex-wrap items-center gap-2 ${isLast ? "" : "pb-3"}`}>
+              <Text
+                size="small"
+                weight={isCurrent ? "plus" : "regular"}
+                className={done || isCurrent ? "text-ui-fg-base" : "text-ui-fg-muted"}
+              >
+                {ORDER_STATUS_META[s].label}
+              </Text>
+              {isCurrent && (
+                <Badge size="2xsmall" color={ORDER_STATUS_META[s].color}>
+                  Now
+                </Badge>
+              )}
+              {canMove && (
+                <Button size="small" variant="secondary" onClick={() => onPick(s)}>
+                  Move here
+                </Button>
+              )}
+            </div>
+          </li>
+        )
+      })}
+    </ol>
   )
 }
 

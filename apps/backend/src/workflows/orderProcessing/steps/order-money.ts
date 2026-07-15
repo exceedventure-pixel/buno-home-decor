@@ -1,9 +1,6 @@
-import {
-  capturePaymentWorkflow,
-  createOrderPaymentCollectionWorkflow,
-} from "@medusajs/core-flows"
+import { createOrderPaymentCollectionWorkflow } from "@medusajs/core-flows"
 import type { MedusaContainer } from "@medusajs/framework/types"
-import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils"
+import { MedusaError, Modules } from "@medusajs/framework/utils"
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 
 import { ACCOUNTING_MODULE } from "../../../modules/accounting"
@@ -43,20 +40,37 @@ export const captureAdvanceStep = createStep(
     const amount = Math.max(0, Number(input.amount) || 0)
     if (amount <= 0) return new StepResponse({ captured: 0 }, null)
 
-    const { result: collection } = await createOrderPaymentCollectionWorkflow(container).run({
+    const { result } = await createOrderPaymentCollectionWorkflow(container).run({
       input: { order_id: input.order_id, amount },
     })
+
+    // The workflow returns an ARRAY of collections, not the one it just made.
+    const collectionId = (result as any)?.[0]?.id
+    if (!collectionId) {
+      throw new MedusaError(
+        MedusaError.Types.UNEXPECTED_STATE,
+        `Could not create a payment collection for order ${input.order_id}`
+      )
+    }
 
     const paymentModule: any = container.resolve(Modules.PAYMENT)
 
     // A manual payment session we can authorize + capture immediately (the cash is in hand).
-    const session = await paymentModule.createPaymentSession((collection as any).id, {
+    const session = await paymentModule.createPaymentSession(collectionId, {
       provider_id: "pp_system_default",
       amount,
       currency_code: "bdt",
       data: {},
     })
     const payment = await paymentModule.authorizePaymentSession(session.id, {})
+    // Null means the provider went async and is still pending — pp_system_default never does,
+    // so treat it as a real failure rather than capturing against an undefined id.
+    if (!payment?.id) {
+      throw new MedusaError(
+        MedusaError.Types.UNEXPECTED_STATE,
+        `Advance payment session ${session.id} did not authorize`
+      )
+    }
     await paymentModule.capturePayment({ payment_id: payment.id, amount })
 
     return new StepResponse({ captured: amount, payment_id: payment.id }, null)

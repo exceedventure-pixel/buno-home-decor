@@ -47,6 +47,27 @@ export const ORDER_STATUS_ORDER: OrderStatusKey[] = [
   "dispatched", "delivered", "on_hold", "cancelled", "returned", "refunded",
 ]
 
+/** Mirrors ORDER_PIPELINE in modules/orderProcessing/constants.ts — the happy path, in order. */
+export const ORDER_PIPELINE: OrderStatusKey[] = [
+  "new_order", "confirmed", "in_production", "ready_to_dispatch", "courier_booked",
+  "dispatched", "delivered",
+]
+
+/** Mirrors EXCEPTION_STATUSES — the exits, which are actions rather than steps on the line. */
+export const EXCEPTION_STATUSES: OrderStatusKey[] = [
+  "on_hold", "cancelled", "returned", "refunded",
+]
+
+const PRODUCTION_ONLY: OrderStatusKey[] = ["in_production", "ready_to_dispatch", "courier_booked"]
+
+export const isExceptionStatus = (s: OrderStatusKey) => EXCEPTION_STATUSES.includes(s)
+
+/** Mirrors orderPipelineFor — ready-stock skips the workshop entirely. */
+export function pipelineFor(type: OrderTypeKey): OrderStatusKey[] {
+  if (type === "ready_stock") return ORDER_PIPELINE.filter((s) => !PRODUCTION_ONLY.includes(s))
+  return ORDER_PIPELINE
+}
+
 export const PAYMENT_STATUS_META: Record<PaymentStatusKey, { label: string; color: Color }> = {
   unpaid:         { label: "Unpaid",           color: "red" },
   advance_paid:   { label: "Advance Paid",     color: "blue" },
@@ -103,6 +124,8 @@ export type OrderRow = {
   units_returned: number
   tracking: string | null
   courier_id: string | null
+  /** What this row may legally move to next — type-aware, computed server-side. */
+  allowed_next: OrderStatusKey[]
 }
 
 export type CourierRate = {

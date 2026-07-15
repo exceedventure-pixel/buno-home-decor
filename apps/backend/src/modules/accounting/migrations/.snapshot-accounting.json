@@ -373,7 +373,9 @@
             "marketing",
             "courier_fee",
             "other_expense",
-            "refund"
+            "refund",
+            "production_cost",
+            "other_income"
           ],
           "mappedType": "enum"
         },
@@ -474,7 +476,9 @@
             "manual",
             "fixed_asset",
             "marketing_spend",
-            "restock"
+            "restock",
+            "order",
+            "production"
           ],
           "mappedType": "enum"
         },

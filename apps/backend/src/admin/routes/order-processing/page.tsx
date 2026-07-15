@@ -1,8 +1,19 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { ShoppingBag } from "@medusajs/icons"
-import { Badge, Button, Container, Heading, Table, Text } from "@medusajs/ui"
-import { useQuery } from "@tanstack/react-query"
+import {
+  Badge,
+  Button,
+  Container,
+  DropdownMenu,
+  Heading,
+  Prompt,
+  Table,
+  Text,
+  toast,
+} from "@medusajs/ui"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
 
 import { money } from "../../lib/kpi"
 import {
@@ -11,6 +22,7 @@ import {
   ORDER_STATUS_ORDER,
   ORDER_TYPE_META,
   PAYMENT_STATUS_META,
+  TRANSITION_EFFECT,
   opApi,
   type OrderStatusKey,
 } from "../../lib/order-processing-api"
@@ -26,9 +38,30 @@ import {
  */
 type TypeFilter = "production" | "ready_stock" | "all"
 
+/** The row + destination awaiting confirmation, so the Prompt can name both. */
+type PendingMove = { orderId: string; displayId: number; to: OrderStatusKey }
+
 const OrderProcessingPage = () => {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("production")
   const [status, setStatus] = useState<OrderStatusKey | "all">("all")
+  const [pending, setPending] = useState<PendingMove | null>(null)
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+
+  /**
+   * Moving an order from the queue runs the very same workflow the order page does — it ships
+   * goods and moves cash. So it gets the same confirmation, spelling out what will happen.
+   */
+  const move = useMutation({
+    mutationFn: (m: PendingMove) => opApi.update(m.orderId, { order_status: m.to }),
+    onSuccess: () => {
+      toast.success("Order updated — stock and cash follow automatically")
+      setPending(null)
+      qc.invalidateQueries({ queryKey: ["order-processing"] })
+      qc.invalidateQueries({ queryKey: ["orders"] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
 
   /**
    * Fetch every order ONCE (type=all), filter in the browser. Filtering is a view of data we
@@ -172,6 +205,7 @@ const OrderProcessingPage = () => {
                 <Table.HeaderCell className="text-right">Total</Table.HeaderCell>
                 <Table.HeaderCell className="hidden md:table-cell text-right">Delivery</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Net</Table.HeaderCell>
+                <Table.HeaderCell className="text-right">Move</Table.HeaderCell>
               </Table.Row>
             </Table.Header>
             <Table.Body>
@@ -183,9 +217,9 @@ const OrderProcessingPage = () => {
                   <Table.Row
                     key={r.order_id}
                     className="cursor-pointer"
-                    onClick={() => {
-                      window.location.href = `/app/orders/${r.order_id}`
-                    }}
+                    // Router navigation, not location.href — the dashboard is a SPA and a full
+                    // page load here costs a re-boot of the whole admin.
+                    onClick={() => navigate(`/orders/${r.order_id}`)}
                   >
                     <Table.Cell className="whitespace-nowrap font-medium">
                       #{r.display_id}
@@ -233,12 +267,44 @@ const OrderProcessingPage = () => {
                     >
                       {money(r.net_profit, cur)}
                     </Table.Cell>
+                    {/* Stop the click here: this cell acts on the row, it doesn't open it. */}
+                    <Table.Cell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      {r.allowed_next.length > 0 ? (
+                        <DropdownMenu>
+                          <DropdownMenu.Trigger asChild>
+                            <Button size="small" variant="secondary">
+                              Move…
+                            </Button>
+                          </DropdownMenu.Trigger>
+                          <DropdownMenu.Content>
+                            {r.allowed_next.map((s) => (
+                              <DropdownMenu.Item
+                                key={s}
+                                onClick={() =>
+                                  setPending({
+                                    orderId: r.order_id,
+                                    displayId: r.display_id,
+                                    to: s,
+                                  })
+                                }
+                              >
+                                {ORDER_STATUS_META[s].label}
+                              </DropdownMenu.Item>
+                            ))}
+                          </DropdownMenu.Content>
+                        </DropdownMenu>
+                      ) : (
+                        <Text size="xsmall" className="text-ui-fg-muted">
+                          —
+                        </Text>
+                      )}
+                    </Table.Cell>
                   </Table.Row>
                 )
               })}
               {!isLoading && rows.length === 0 && (
                 <Table.Row>
-                  <Table.Cell colSpan={9}>
+                  <Table.Cell colSpan={10}>
                     <Text size="small" className="py-6 text-ui-fg-muted">
                       Nothing in this queue.
                     </Text>
@@ -250,9 +316,31 @@ const OrderProcessingPage = () => {
         </div>
 
         <Text size="xsmall" className="text-ui-fg-muted">
-          Open an order to move it through the pipeline, flag an issue, or set the courier fee.
+          Move an order straight from this queue, or open it to flag an issue, set the courier fee
+          or see its full timeline.
         </Text>
       </Container>
+
+      {/* Same confirmation as the order page — a move from here does exactly the same work. */}
+      <Prompt open={!!pending} onOpenChange={(v) => !v && setPending(null)}>
+        <Prompt.Content>
+          <Prompt.Header>
+            <Prompt.Title>
+              {pending
+                ? `Move #${pending.displayId} to ${ORDER_STATUS_META[pending.to].label}?`
+                : ""}
+            </Prompt.Title>
+            <Prompt.Description>
+              {(pending && TRANSITION_EFFECT[pending.to]) ??
+                "Records the stage. Nothing moves in stock or cash."}
+            </Prompt.Description>
+          </Prompt.Header>
+          <Prompt.Footer>
+            <Prompt.Cancel>Cancel</Prompt.Cancel>
+            <Prompt.Action onClick={() => pending && move.mutate(pending)}>Confirm</Prompt.Action>
+          </Prompt.Footer>
+        </Prompt.Content>
+      </Prompt>
     </div>
   )
 }

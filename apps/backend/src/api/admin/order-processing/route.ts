@@ -1,7 +1,7 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 
 import { computeOrderEconomics } from "../../../lib/orders/order-economics"
-import { ORDER_STATUSES } from "../../../modules/orderProcessing/constants"
+import { allowedTransitions, ORDER_STATUSES } from "../../../modules/orderProcessing/constants"
 
 /**
  * GET /admin/order-processing[?status=&issue=&payment=&from=&to=]
@@ -41,7 +41,13 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   filtered.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
 
   res.json({
-    orders: filtered,
+    // allowed_next per row so the queue can offer a status change inline, using exactly the same
+    // type-aware guards the order detail does. Deciding this in the browser would be a second
+    // copy of the rules, free to drift from the ones the workflow actually enforces.
+    orders: filtered.map((r) => ({
+      ...r,
+      allowed_next: allowedTransitions(r.order_type, r.order_status),
+    })),
     counts,
     type_counts,
     total: rows.length,

@@ -181,6 +181,51 @@ export function storedStagesFor(type: OrderType): StoredStage[] {
   return STORED_STAGES.filter((s) => !PRODUCTION_ONLY_STATUSES.includes(s as OrderStatus))
 }
 
+/* ------------------------------------ the pipeline --------------------------------- */
+
+/**
+ * The happy path, in order. An order walks this line from left to right and every step is a
+ * place it can legitimately sit — which is what makes it drawable as a timeline.
+ *
+ * ORDER_PIPELINE is deliberately NOT the same list as ORDER_STATUSES: the four below are
+ * excluded because they are not steps on the way anywhere.
+ */
+export const ORDER_PIPELINE = [
+  "new_order",
+  "confirmed",
+  "in_production",
+  "ready_to_dispatch",
+  "courier_booked",
+  "dispatched",
+  "delivered",
+] as const
+
+/**
+ * The exits. None of these is a stage in a journey — they are things that HAPPEN to an order and
+ * stop (or suspend) it, so they can't sit on the timeline without implying every order should
+ * eventually reach them. They're offered as separate actions instead.
+ *
+ *   on_hold   — paused; it rejoins the pipeline where it left off.
+ *   cancelled / returned / refunded — the order came off the line.
+ */
+export const EXCEPTION_STATUSES = ["on_hold", "cancelled", "returned", "refunded"] as const
+export type ExceptionStatus = (typeof EXCEPTION_STATUSES)[number]
+
+export function isExceptionStatus(s: OrderStatus): s is ExceptionStatus {
+  return (EXCEPTION_STATUSES as readonly OrderStatus[]).includes(s)
+}
+
+/**
+ * The pipeline THIS type of order actually walks. Ready-stock has no workshop, so it goes
+ * straight from confirmed to dispatched — drawing "In Production" on its timeline would promise
+ * a step that will never happen.
+ */
+export function orderPipelineFor(type: OrderType): OrderStatus[] {
+  const base = [...ORDER_PIPELINE] as OrderStatus[]
+  if (PRODUCTION_TYPES.includes(type)) return base
+  return base.filter((s) => !PRODUCTION_ONLY_STATUSES.includes(s))
+}
+
 /* ---------------------------------- payment status --------------------------------- */
 
 export const PAYMENT_STATUSES = [
