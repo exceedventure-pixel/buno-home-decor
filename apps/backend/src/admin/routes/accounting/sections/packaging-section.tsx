@@ -45,7 +45,8 @@ export function PackagingSection() {
 
   const { data: purchases, isLoading } = useQuery({
     queryKey: ["accounting", "ledger", "packaging"],
-    queryFn: () => api.ledger({ category: "packaging_purchase", limit: 500 }),
+    // 200 is the ledger endpoint's max page size — asking for more 400s and the log shows empty.
+    queryFn: () => api.ledger({ category: "packaging_purchase", limit: 200 }),
   })
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["accounting"] })

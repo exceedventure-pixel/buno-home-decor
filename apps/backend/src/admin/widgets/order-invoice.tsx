@@ -235,10 +235,14 @@ const STYLES = `
 
   /* Compact = used on the combined page where space is tight. */
   .doc.compact { padding:0; font-size:11px; }
-  .doc.compact .logo { height:30px; }
-  .doc.compact .bname { font-size:14px; }
+  .doc.compact .logo { height:28px; }
+  .doc.compact .bname { font-size:12px; }
   .doc.compact .tag { display:none; }
-  .doc.compact .mast { padding-bottom:6px; border-bottom-width:2px; }
+  .doc.compact .mast { padding-bottom:6px; border-bottom-width:2px; gap:6px; }
+  /* The slip is only half the page wide, so shrink the doc badge + meta or the label clips. */
+  .doc.compact .doclabel { font-size:8px; padding:2px 5px; letter-spacing:.3px; }
+  .doc.compact .ord { font-size:12px; margin-top:2px; }
+  .doc.compact .date { font-size:9px; }
   .doc.compact table.items th, .doc.compact table.items td { padding:4px 6px; }
   .doc.compact .foot { display:none; }
   .doc.compact .shipbig { padding:8px 10px; margin-top:8px; }
