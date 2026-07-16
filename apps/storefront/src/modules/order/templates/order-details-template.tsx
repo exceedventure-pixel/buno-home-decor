@@ -2,7 +2,9 @@
 
 import { XMark } from "@medusajs/icons"
 import { HttpTypes } from "@medusajs/types"
+import { OrderCourierTracking } from "@lib/data/orders"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
+import CourierTracking from "@modules/order/components/courier-tracking"
 import Help from "@modules/order/components/help"
 import Items from "@modules/order/components/items"
 import OrderDetails from "@modules/order/components/order-details"
@@ -12,10 +14,12 @@ import React from "react"
 
 type OrderDetailsTemplateProps = {
   order: HttpTypes.StoreOrder
+  tracking?: OrderCourierTracking | null
 }
 
 const OrderDetailsTemplate: React.FC<OrderDetailsTemplateProps> = ({
   order,
+  tracking = null,
 }) => {
   return (
     <div className="flex flex-col justify-center gap-y-4">
@@ -34,6 +38,7 @@ const OrderDetailsTemplate: React.FC<OrderDetailsTemplateProps> = ({
         data-testid="order-details-container"
       >
         <OrderDetails order={order} showStatus />
+        <CourierTracking tracking={tracking} />
         <Items order={order} />
         <ShippingDetails order={order} />
         <OrderSummary order={order} />

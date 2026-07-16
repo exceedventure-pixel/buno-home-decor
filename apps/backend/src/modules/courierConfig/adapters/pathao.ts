@@ -1,5 +1,10 @@
 import type { FulfillmentOrderDTO } from "@medusajs/types"
-import type { CourierAdapter, NormalizedStatus, ParcelResult } from "./interface"
+import type {
+  CourierAdapter,
+  CreateParcelOptions,
+  NormalizedStatus,
+  ParcelResult,
+} from "./interface"
 
 const SANDBOX_BASE = "https://hermes-sandbox.pathao.com"
 const LIVE_BASE = "https://api-hermes.pathao.com"
@@ -140,7 +145,8 @@ async function lookupArea(
 export const pathaoAdapter: CourierAdapter = {
   async createParcel(
     order: Partial<FulfillmentOrderDTO>,
-    credentials: Record<string, string>
+    credentials: Record<string, string>,
+    opts?: CreateParcelOptions
   ): Promise<ParcelResult> {
     const sandbox = credentials.sandbox === "true"
     const base = sandbox ? SANDBOX_BASE : LIVE_BASE
@@ -162,10 +168,11 @@ export const pathaoAdapter: CourierAdapter = {
     const recipientPhone = address?.phone || (order as any).email || ""
 
     const paymentStatus = (order as any).payment_status
-    const collectAmount =
+    const fallbackCollect =
       paymentStatus === "not_paid" || paymentStatus === "awaiting"
         ? Number((order as any).total ?? 0)
         : 0
+    const collectAmount = opts?.cod_amount ?? fallbackCollect
 
     const body = {
       store_id: Number(credentials.store_id ?? 0) || undefined,
@@ -178,7 +185,7 @@ export const pathaoAdapter: CourierAdapter = {
       recipient_area: areaId,
       delivery_type: 48, // standard
       item_type: 2,       // parcel
-      special_instruction: `Order #${(order as any).display_id ?? ""}`,
+      special_instruction: opts?.note ?? `Order #${(order as any).display_id ?? ""}`,
       item_quantity: 1,
       item_weight: 0.5,
       amount_to_collect: collectAmount,

@@ -21,14 +21,12 @@ import { ORDER_PROCESSING_MODULE } from "../../../modules/orderProcessing"
 export type SetCourierFeeInput = {
   order_id: string
   fee: number
-  courier_rate_id?: string | null
   actor_id?: string | null
 }
 
 type Comp = {
   wf_id: string
   prevFee: number
-  prevRateId: string | null
   ledgerId?: string
   prevLedger?: any
 }
@@ -46,12 +44,9 @@ export const setCourierFeeStep = createStep(
     const comp: Comp = {
       wf_id: wf.id,
       prevFee: Number(wf.courier_fee) || 0,
-      prevRateId: wf.courier_rate_id ?? null,
     }
 
-    await svc.updateOrderWorkflows([
-      { id: wf.id, courier_fee: fee, courier_rate_id: input.courier_rate_id ?? null },
-    ])
+    await svc.updateOrderWorkflows([{ id: wf.id, courier_fee: fee }])
 
     // Mirror it into the Cash Book, keyed to this order so it can only ever exist once.
     const [existing] = await acct.listLedgerEntries({
@@ -93,9 +88,7 @@ export const setCourierFeeStep = createStep(
     const svc: any = container.resolve(ORDER_PROCESSING_MODULE)
     const acct: any = container.resolve(ACCOUNTING_MODULE)
 
-    await svc.updateOrderWorkflows([
-      { id: comp.wf_id, courier_fee: comp.prevFee, courier_rate_id: comp.prevRateId },
-    ])
+    await svc.updateOrderWorkflows([{ id: comp.wf_id, courier_fee: comp.prevFee }])
     if (comp.ledgerId) await acct.deleteLedgerEntries([comp.ledgerId])
     else if (comp.prevLedger) {
       await acct

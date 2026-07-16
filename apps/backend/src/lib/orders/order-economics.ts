@@ -75,6 +75,13 @@ export type OrderEconomics = {
   units_returned: number
   tracking: string | null
   courier_id: string | null
+  /** Normalised courier status (pending | in_transit | delivered | returned | cancelled). */
+  courier_status: string | null
+  consignment_id: string | null
+  /** COD amount handed to the courier to collect. */
+  cod_amount: number
+  /** The courier's own delivery charge, once captured from its API (else null). */
+  actual_delivery_charge: number | null
 }
 
 /**
@@ -227,7 +234,16 @@ export async function computeOrderEconomics(
 
     const delivered = (o.items ?? []).some((it: any) => num(it.detail?.delivered_quantity) > 0)
     const courierData = (o.fulfillments ?? []).map((f: any) => f.data ?? {})
-    const courierDelivered = courierData.some((d: any) => d.courier_status === "delivered")
+    // Courier shipment lives on the workflow row (booked before any fulfilment exists); fall back
+    // to fulfilment.data for orders booked before that move.
+    const courierId = wf?.courier_id ?? courierData.find((d: any) => d.courier_id)?.courier_id ?? null
+    const trackingId = wf?.tracking_id ?? courierData.find((d: any) => d.tracking_id)?.tracking_id ?? null
+    const consignmentId =
+      wf?.consignment_id ?? courierData.find((d: any) => d.consignment_id)?.consignment_id ?? null
+    const courierStatus =
+      wf?.courier_status ?? courierData.find((d: any) => d.courier_status)?.courier_status ?? null
+    const courierDelivered =
+      courierStatus === "delivered" || courierData.some((d: any) => d.courier_status === "delivered")
 
     const facts: OrderFacts = {
       canceled: !!o.canceled_at,
@@ -309,8 +325,13 @@ export async function computeOrderEconomics(
 
       units_shipped: unitsShipped,
       units_returned: unitsReturned,
-      tracking: courierData.find((d: any) => d.tracking_id)?.tracking_id ?? null,
-      courier_id: courierData.find((d: any) => d.courier_id)?.courier_id ?? null,
+      tracking: trackingId,
+      courier_id: courierId,
+      courier_status: courierStatus,
+      consignment_id: consignmentId,
+      cod_amount: num(wf?.cod_amount),
+      actual_delivery_charge:
+        wf?.actual_delivery_charge != null ? num(wf.actual_delivery_charge) : null,
     }
   })
 }

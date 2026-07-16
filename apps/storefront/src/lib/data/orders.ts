@@ -29,6 +29,34 @@ export const retrieveOrder = async (id: string) => {
     .catch((err) => medusaError(err))
 }
 
+export type OrderCourierTracking = {
+  courier_id: string
+  courier_name: string
+  status: string
+  tracking_id: string | null
+  tracking_url: string | null
+}
+
+/**
+ * Courier delivery status for one of the customer's own orders. Returns null when the order has
+ * no courier shipment (manual, not yet booked) or on any error — the order page must render
+ * without it. Backed by the custom GET /store/orders/:id/tracking route.
+ */
+export const retrieveOrderTracking = async (
+  id: string
+): Promise<OrderCourierTracking | null> => {
+  try {
+    const headers = { ...(await getAuthHeaders()) }
+    const { tracking } = await sdk.client.fetch<{ tracking: OrderCourierTracking | null }>(
+      `/store/orders/${id}/tracking`,
+      { method: "GET", headers, cache: "no-store" }
+    )
+    return tracking ?? null
+  } catch {
+    return null
+  }
+}
+
 export const listOrders = async (
   limit: number = 10,
   offset: number = 0,

@@ -78,7 +78,18 @@ export async function chargeOrder(
     )
   }
 
-  await paymentModule.capturePayment({ payment_id: payment.id, amount })
+  /**
+   * Capture through the ORDER-aware workflow, not paymentModule.capturePayment directly.
+   *
+   * A raw module capture sets the payment's `captured_at` — so "Paid Total" moves — but it never
+   * records an order TRANSACTION, and Medusa's "Outstanding amount" is derived from transactions,
+   * not from captured_at. That mismatch is exactly what showed an advance as paid while the
+   * outstanding balance still read the full order total. capturePaymentWorkflow registers the
+   * transaction, so paid and outstanding finally agree.
+   */
+  await capturePaymentWorkflow(container).run({
+    input: { payment_id: payment.id, amount },
+  })
   return payment.id
 }
 

@@ -23,10 +23,10 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     throw new MedusaError(MedusaError.Types.NOT_FOUND, `Order "${orderId}" not found.`)
   }
 
-  const [events, rates] = await Promise.all([
-    svc.listOrderStatusEvents({ order_id: orderId }, { order: { created_at: "DESC" }, take: 50 }),
-    svc.listCourierRates({ is_active: true }, { take: 50 }),
-  ])
+  const events = await svc.listOrderStatusEvents(
+    { order_id: orderId },
+    { order: { created_at: "DESC" }, take: 50 }
+  )
 
   res.json({
     order: econ,
@@ -34,7 +34,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     // "in production" and a pre-order is.
     allowed_next: allowedTransitions(econ.order_type, econ.order_status),
     events,
-    courier_rates: rates,
   })
 }
 
@@ -49,10 +48,10 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     order_status?: string
     issue_status?: string
     courier_fee?: number
-    courier_rate_id?: string | null
     production_cost?: number
     delivery_charged?: number | null
     advance_amount?: number
+    cod_amount?: number
     note?: string | null
   }
 
@@ -61,7 +60,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       input: {
         order_id: orderId,
         fee: Number(body.courier_fee),
-        courier_rate_id: body.courier_rate_id ?? null,
         actor_id: actorId,
       },
     })
@@ -110,6 +108,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         to: body.order_status as any,
         actor_id: actorId,
         note: body.note ?? null,
+        // Only consumed when booking a courier (to === "courier_booked"): the COD to collect,
+        // defaulting to the order's outstanding when omitted.
+        cod_amount: body.cod_amount,
       },
     })
   }

@@ -1,5 +1,25 @@
 import type { FulfillmentOrderDTO } from "@medusajs/types"
-import type { CourierAdapter, NormalizedStatus, ParcelResult } from "./interface"
+import type {
+  CourierAdapter,
+  CreateParcelOptions,
+  NormalizedStatus,
+  ParcelResult,
+} from "./interface"
+
+/**
+ * Pull a per-consignment delivery charge out of a Steadfast payload IF one is present.
+ * Steadfast's public API has historically NOT returned this on create/status, so this is a
+ * best-effort read across the field names they've used — it returns undefined when absent,
+ * and the caller leaves the courier fee to manual entry in that case. Verify against current
+ * Steadfast docs before relying on it.
+ */
+function readDeliveryCharge(payload: any): number | undefined {
+  const c = payload?.consignment ?? payload ?? {}
+  const candidate =
+    c.delivery_charge ?? c.delivery_fee ?? c.charge ?? payload?.delivery_charge
+  const n = Number(candidate)
+  return Number.isFinite(n) && n > 0 ? n : undefined
+}
 
 // Steadfast status → NormalizedStatus mapping
 const STATUS_MAP: Record<string, NormalizedStatus> = {
@@ -15,7 +35,8 @@ const STATUS_MAP: Record<string, NormalizedStatus> = {
 export const steadfastAdapter: CourierAdapter = {
   async createParcel(
     order: Partial<FulfillmentOrderDTO>,
-    credentials: Record<string, string>
+    credentials: Record<string, string>,
+    opts?: CreateParcelOptions
   ): Promise<ParcelResult> {
     const address = (order as any).shipping_address
     const recipientName =
@@ -34,12 +55,15 @@ export const steadfastAdapter: CourierAdapter = {
       .filter(Boolean)
       .join(", ")
 
-    // COD amount: full order total if no online payment, else 0
+    // COD amount: the caller passes the exact figure to collect (order total minus any advance,
+    // delivery included — see order-economics `outstanding`). Only fall back to the payment-status
+    // heuristic when no explicit amount is given.
     const paymentMethod = (order as any).payment_status
-    const codAmount =
+    const fallbackCod =
       paymentMethod === "not_paid" || paymentMethod === "awaiting"
         ? Number(((order as any).total ?? 0))
         : 0
+    const codAmount = opts?.cod_amount ?? fallbackCod
 
     const body = {
       invoice: String((order as any).display_id ?? (order as any).id ?? ""),
@@ -47,7 +71,7 @@ export const steadfastAdapter: CourierAdapter = {
       recipient_phone: recipientPhone,
       recipient_address: recipientAddress || "Dhaka, Bangladesh",
       cod_amount: codAmount,
-      note: `Order #${(order as any).display_id ?? ""}`,
+      note: opts?.note ?? `Order #${(order as any).display_id ?? ""}`,
     }
 
     const res = await fetch("https://portal.packzy.com/api/v1/create_order", {
@@ -72,6 +96,7 @@ export const steadfastAdapter: CourierAdapter = {
     return {
       tracking_id: String(consignment.tracking_code ?? consignment.consignment_id ?? ""),
       consignment_id: String(consignment.consignment_id ?? ""),
+      delivery_charge: readDeliveryCharge(json),
       raw: json,
     }
   },

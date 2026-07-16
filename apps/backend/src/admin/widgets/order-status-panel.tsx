@@ -48,9 +48,9 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
 
   const [pending, setPending] = useState<OrderStatusKey | null>(null)
   const [fee, setFee] = useState("")
-  const [rateId, setRateId] = useState<string>("")
   const [deliveryCharged, setDeliveryCharged] = useState("")
   const [prodCost, setProdCost] = useState("")
+  const [codInput, setCodInput] = useState("")
 
   const o = data?.order
 
@@ -60,6 +60,11 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
     setDeliveryCharged(String(o.delivery_charged ?? 0))
     setProdCost(String(o.production_cost ?? 0))
   }, [o?.courier_cost, o?.delivery_charged, o?.production_cost]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When booking a courier, default the COD to what's still owed (advance already deducted).
+  useEffect(() => {
+    if (pending === "courier_booked" && o) setCodInput(String(Math.max(0, o.outstanding ?? 0)))
+  }, [pending, o?.outstanding]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * A status change moves real stock and cash, so Medusa's own panels on this page (summary,
@@ -73,9 +78,17 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   }
 
   const move = useMutation({
-    mutationFn: (to: OrderStatusKey) => opApi.update(orderId, { order_status: to }),
-    onSuccess: () => {
-      toast.success("Order updated — stock and cash follow automatically")
+    mutationFn: (vars: { to: OrderStatusKey; cod_amount?: number }) =>
+      opApi.update(orderId, {
+        order_status: vars.to,
+        ...(vars.cod_amount != null ? { cod_amount: vars.cod_amount } : {}),
+      }),
+    onSuccess: (_r, vars) => {
+      toast.success(
+        vars.to === "courier_booked"
+          ? "Booked with the courier — it dispatches automatically on pickup"
+          : "Order updated — stock and cash follow automatically"
+      )
       setPending(null)
       refresh()
     },
@@ -96,11 +109,7 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   })
 
   const saveFee = useMutation({
-    mutationFn: () =>
-      opApi.update(orderId, {
-        courier_fee: Number(fee) || 0,
-        courier_rate_id: rateId || null,
-      }),
+    mutationFn: () => opApi.update(orderId, { courier_fee: Number(fee) || 0 }),
     onSuccess: () => {
       toast.success("Courier fee saved and booked to the Cash Book")
       refresh()
@@ -134,7 +143,6 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   const ot = ORDER_TYPE_META[o.order_type]
   const isProduction = o.order_type !== "ready_stock"
   const next = data?.allowed_next ?? []
-  const rates = data?.courier_rates ?? []
 
   const pipeline = pipelineFor(o.order_type)
   const exceptionNext = next.filter(isExceptionStatus)
@@ -178,6 +186,28 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
             ? " — collected when you mark it Delivered."
             : ""}
         </Text>
+      )}
+
+      {/* Courier shipment — shown once booked (before any fulfilment exists) */}
+      {o.consignment_id && (
+        <div className="flex flex-col gap-y-1 border-t border-ui-border-base pt-4">
+          <Label size="small">Courier shipment</Label>
+          <Text size="xsmall" className="text-ui-fg-subtle">
+            {o.courier_id ? o.courier_id[0].toUpperCase() + o.courier_id.slice(1) : "Courier"} · status{" "}
+            <b>{o.courier_status ?? "pending"}</b>
+          </Text>
+          {o.tracking && (
+            <Text size="xsmall" className="text-ui-fg-subtle font-mono">
+              Tracking: {o.tracking}
+            </Text>
+          )}
+          <Text size="xsmall" className="text-ui-fg-muted">
+            COD sent {money(o.cod_amount ?? 0, cur)}
+            {o.actual_delivery_charge != null
+              ? ` · courier charged ${money(o.actual_delivery_charge, cur)}`
+              : ""}
+          </Text>
+        </div>
       )}
 
       {/* Where it is on the line, and where it can go next */}
@@ -227,26 +257,10 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
       {/* Courier fee → delivery margin */}
       <div className="flex flex-col gap-y-2 border-t border-ui-border-base pt-4">
         <Label size="small">Courier fee (what they charge us)</Label>
+        <Text size="xsmall" className="text-ui-fg-muted -mt-1">
+          Captured automatically from the courier when it reports one; otherwise type it here.
+        </Text>
         <div className="flex flex-wrap items-end gap-2">
-          <Select
-            value={rateId}
-            onValueChange={(v) => {
-              setRateId(v)
-              const r = rates.find((x) => x.id === v)
-              if (r) setFee(String(r.fee))
-            }}
-          >
-            <Select.Trigger className="w-40">
-              <Select.Value placeholder="Zone" />
-            </Select.Trigger>
-            <Select.Content>
-              {rates.map((r) => (
-                <Select.Item key={r.id} value={r.id}>
-                  {r.name} — {money(r.fee, cur)}
-                </Select.Item>
-              ))}
-            </Select.Content>
-          </Select>
           <Input
             type="number"
             min="0"
@@ -363,16 +377,49 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
         <Prompt.Content>
           <Prompt.Header>
             <Prompt.Title>
-              Move to {pending ? ORDER_STATUS_META[pending].label : ""}?
+              {pending === "courier_booked"
+                ? "Send to Steadfast?"
+                : `Move to ${pending ? ORDER_STATUS_META[pending].label : ""}?`}
             </Prompt.Title>
             <Prompt.Description>
-              {(pending && TRANSITION_EFFECT[pending]) ??
-                "Records the stage. Nothing moves in stock or cash."}
+              {pending === "courier_booked"
+                ? "Books the parcel with your active courier. Stock does NOT move yet — the order dispatches automatically when the courier reports pickup."
+                : (pending && TRANSITION_EFFECT[pending]) ??
+                  "Records the stage. Nothing moves in stock or cash."}
             </Prompt.Description>
           </Prompt.Header>
+
+          {pending === "courier_booked" && (
+            <div className="flex flex-col gap-y-2 px-6 pb-2">
+              <Label size="small">Cash to collect on delivery (COD)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={codInput}
+                onChange={(e) => setCodInput(e.target.value)}
+              />
+              <Text size="xsmall" className="text-ui-fg-muted">
+                Defaults to what's still owed after any advance. Delivery charge is included in the
+                order total.
+              </Text>
+            </div>
+          )}
+
           <Prompt.Footer>
             <Prompt.Cancel>Cancel</Prompt.Cancel>
-            <Prompt.Action onClick={() => pending && move.mutate(pending)}>Confirm</Prompt.Action>
+            <Prompt.Action
+              onClick={() =>
+                pending &&
+                move.mutate({
+                  to: pending,
+                  cod_amount:
+                    pending === "courier_booked" ? Math.max(0, Number(codInput) || 0) : undefined,
+                })
+              }
+            >
+              {pending === "courier_booked" ? "Book courier" : "Confirm"}
+            </Prompt.Action>
           </Prompt.Footer>
         </Prompt.Content>
       </Prompt>

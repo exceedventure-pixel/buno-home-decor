@@ -9,6 +9,7 @@ import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/util
 import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 
 import { requireSellableLocation } from "../../../lib/inventory/stock-location"
+import { bookCourierParcel } from "../../../lib/orders/courier-booking"
 import { computeOrderEconomics } from "../../../lib/orders/order-economics"
 import { reserveOrderItems } from "../../../lib/orders/reserve"
 import { canTransition, issueWritesOffGoods } from "../../../lib/orders/status"
@@ -40,6 +41,8 @@ export type TransitionInput = {
   actor_id?: string | null
   note?: string | null
   source?: string
+  /** Only used when `to` is "courier_booked": the COD to collect (defaults to outstanding). */
+  cod_amount?: number
 }
 
 const isStoredStage = (s: OrderStatus): s is StoredStage =>
@@ -78,6 +81,23 @@ export const transitionOrderStep = createStep(
     const prevStage: StoredStage = wf.stage
 
     /* ---------------------------------- the real work ---------------------------------- */
+
+    if (input.to === "courier_booked") {
+      // Book the parcel with the active courier — no fulfilment, no stock movement. The tracking
+      // identity lands on the order_workflow; dispatch (and the stock move) follows automatically
+      // when the courier reports pickup. Idempotent: re-booking an already-booked order is refused
+      // so a double click can't create a second consignment.
+      if (wf.consignment_id) {
+        throw new MedusaError(
+          MedusaError.Types.NOT_ALLOWED,
+          "This order is already booked with a courier."
+        )
+      }
+      await bookCourierParcel(container, input.order_id, {
+        cod_amount: input.cod_amount,
+        note: input.note ?? undefined,
+      })
+    }
 
     if (input.to === "dispatched") {
       // Ship everything not yet shipped. This is what takes stock off the shelf.

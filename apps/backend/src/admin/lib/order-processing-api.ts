@@ -124,17 +124,12 @@ export type OrderRow = {
   units_returned: number
   tracking: string | null
   courier_id: string | null
+  courier_status: string | null
+  consignment_id: string | null
+  cod_amount: number
+  actual_delivery_charge: number | null
   /** What this row may legally move to next — type-aware, computed server-side. */
   allowed_next: OrderStatusKey[]
-}
-
-export type CourierRate = {
-  id: string
-  name: string
-  fee: number
-  cod_fee_pct: number
-  is_default: boolean
-  is_active: boolean
 }
 
 export type StatusEvent = {
@@ -166,15 +161,8 @@ export const opApi = {
       order: OrderRow
       allowed_next: OrderStatusKey[]
       events: StatusEvent[]
-      courier_rates: CourierRate[]
     }>(`/order-processing/${orderId}`),
 
   update: (orderId: string, body: unknown) =>
     rbacFetch(`/order-processing/${orderId}`, { method: "POST", body: JSON.stringify(body) }),
-
-  rates: () => rbacFetch<{ courier_rates: CourierRate[] }>(`/order-processing/rates`),
-  saveRate: (body: unknown) =>
-    rbacFetch(`/order-processing/rates`, { method: "POST", body: JSON.stringify(body) }),
-  deleteRate: (id: string) =>
-    rbacFetch(`/order-processing/rates?id=${encodeURIComponent(id)}`, { method: "DELETE" }),
 }

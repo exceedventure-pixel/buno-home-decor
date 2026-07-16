@@ -51,7 +51,6 @@ const OrderWorkflow = model
      * "delivery overcharge" — and it's the only way to know whether delivery makes or loses money.
      */
     courier_fee: model.bigNumber().default(0),
-    courier_rate_id: model.text().nullable(),
 
     /**
      * PRE-ORDER & CUSTOM only: what it cost to produce. These never enter inventory, so there is
@@ -68,8 +67,27 @@ const OrderWorkflow = model
      */
     delivery_charged: model.bigNumber().nullable(),
 
+    /**
+     * COURIER SHIPMENT — set when the order is booked with a courier ("Send to Steadfast").
+     *
+     * These live here, not on the Medusa fulfilment, because the parcel is booked BEFORE it
+     * ships: at booking there is no fulfilment yet (stock only leaves at dispatch, which the
+     * courier's pickup status triggers automatically). Once a fulfilment does exist, the
+     * subscriber mirrors these onto `fulfillment.data` so the native admin widget keeps working.
+     * A manual shipment leaves all of these null.
+     */
+    courier_id: model.text().nullable(),
+    consignment_id: model.text().nullable(),
+    tracking_id: model.text().nullable(),
+    /** Normalised courier status: pending | in_transit | delivered | returned | cancelled. */
+    courier_status: model.text().nullable(),
+    /** The COD amount actually sent to the courier to collect (total − advance, delivery incl.). */
+    cod_amount: model.bigNumber().nullable(),
+    /** The courier's own delivery charge, captured from its API when it exposes one (else null). */
+    actual_delivery_charge: model.bigNumber().nullable(),
+
     note: model.text().nullable(),
   })
-  .indexes([{ on: ["stage"] }, { on: ["issue_status"] }])
+  .indexes([{ on: ["stage"] }, { on: ["issue_status"] }, { on: ["consignment_id"] }])
 
 export default OrderWorkflow

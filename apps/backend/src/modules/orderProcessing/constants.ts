@@ -151,13 +151,15 @@ export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 
 /**
  * The production stages only exist for pre-order/custom. A ready-stock order goes straight from
- * confirmed to dispatched — there is nothing to "produce". Offering those buttons on a
- * ready-stock order would be inviting a meaningless click, so we strip them per type.
+ * confirmed to ready — there is nothing to "produce". Offering those buttons on a ready-stock
+ * order would be inviting a meaningless click, so we strip them per type.
+ *
+ * `courier_booked` is deliberately NOT here: every order type can be booked with a courier
+ * ("Send to Steadfast") before it ships, ready-stock website orders included.
  */
 const PRODUCTION_ONLY_STATUSES: OrderStatus[] = [
   "in_production",
   "ready_to_dispatch",
-  "courier_booked",
 ]
 
 /**
@@ -169,9 +171,13 @@ export function allowedTransitions(type: OrderType, from: OrderStatus): OrderSta
   const base = ALLOWED_TRANSITIONS[from] ?? []
   if (PRODUCTION_TYPES.includes(type)) return base
 
-  // Ready-stock: drop the production stages, and let "confirmed" reach "dispatched" directly.
+  // Ready-stock: drop the production stages, and let "confirmed" reach "dispatched" and
+  // "courier_booked" directly (no production step in between).
   const stripped = base.filter((s) => !PRODUCTION_ONLY_STATUSES.includes(s))
-  if (from === "confirmed" && !stripped.includes("dispatched")) stripped.unshift("dispatched")
+  if (from === "confirmed") {
+    if (!stripped.includes("dispatched")) stripped.unshift("dispatched")
+    if (!stripped.includes("courier_booked")) stripped.unshift("courier_booked")
+  }
   return stripped
 }
 
@@ -307,11 +313,3 @@ export const RESTOCKING_ISSUES: IssueStatus[] = [
   "exchange_requested",
 ]
 
-/* ---------------------------------- courier zones ---------------------------------- */
-
-/** Seeded defaults for the rate table. Real fees are edited in Store Settings. */
-export const DEFAULT_COURIER_RATES = [
-  { name: "Inside Dhaka", fee: 60, cod_fee_pct: 1, is_default: true },
-  { name: "Sub-Dhaka", fee: 100, cod_fee_pct: 1, is_default: false },
-  { name: "Outside Dhaka", fee: 120, cod_fee_pct: 1, is_default: false },
-] as const

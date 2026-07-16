@@ -1,6 +1,5 @@
 import { MedusaService } from "@medusajs/framework/utils"
 
-import CourierRate from "./models/courier-rate"
 import OrderStatusEvent from "./models/order-status-event"
 import OrderWorkflow from "./models/order-workflow"
 
@@ -11,7 +10,6 @@ import OrderWorkflow from "./models/order-workflow"
 class OrderProcessingModuleService extends MedusaService({
   OrderWorkflow,
   OrderStatusEvent,
-  CourierRate,
 }) {}
 
 export default OrderProcessingModuleService

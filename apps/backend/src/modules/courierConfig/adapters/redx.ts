@@ -1,5 +1,10 @@
 import type { FulfillmentOrderDTO } from "@medusajs/types"
-import type { CourierAdapter, NormalizedStatus, ParcelResult } from "./interface"
+import type {
+  CourierAdapter,
+  CreateParcelOptions,
+  NormalizedStatus,
+  ParcelResult,
+} from "./interface"
 
 const SANDBOX_BASE = "https://sandbox.redx.com.bd"
 const LIVE_BASE = "https://openapi.redx.com.bd"
@@ -54,7 +59,8 @@ async function lookupArea(
 export const redxAdapter: CourierAdapter = {
   async createParcel(
     order: Partial<FulfillmentOrderDTO>,
-    credentials: Record<string, string>
+    credentials: Record<string, string>,
+    opts?: CreateParcelOptions
   ): Promise<ParcelResult> {
     const sandbox = credentials.sandbox === "true"
     const base = sandbox ? SANDBOX_BASE : LIVE_BASE
@@ -71,10 +77,11 @@ export const redxAdapter: CourierAdapter = {
     const area = await lookupArea(city, token, sandbox)
 
     const paymentStatus = (order as any).payment_status
-    const cashOnDelivery =
+    const fallbackCod =
       paymentStatus === "not_paid" || paymentStatus === "awaiting"
         ? Number((order as any).total ?? 0)
         : 0
+    const cashOnDelivery = opts?.cod_amount ?? fallbackCod
 
     const body: Record<string, unknown> = {
       name: recipientName,
