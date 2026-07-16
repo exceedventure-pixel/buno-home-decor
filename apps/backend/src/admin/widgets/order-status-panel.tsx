@@ -44,6 +44,11 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   const { data, isLoading } = useQuery({
     queryKey: ["order-processing", orderId],
     queryFn: () => opApi.get(orderId),
+    // Live updates without a page reload: refetch when the tab regains focus and on a light
+    // interval, so changes from Medusa's own buttons AND server-driven courier status (the
+    // webhook auto-dispatching / delivering an order) appear here on their own.
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
   })
 
   const [pending, setPending] = useState<OrderStatusKey | null>(null)
@@ -75,6 +80,8 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["order-processing"] })
     qc.invalidateQueries({ queryKey: ["orders"] })
+    // Courier fee / production cost / advance mirror into the Cash Book, so refresh accounting too.
+    qc.invalidateQueries({ queryKey: ["accounting"] })
   }
 
   const move = useMutation({

@@ -1,6 +1,7 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import { Container, Text, Badge, Button, Prompt, toast } from "@medusajs/ui"
 import type { DetailWidgetProps, HttpTypes } from "@medusajs/framework/types"
+import { useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { adminFetch } from "../lib/api"
 
@@ -24,13 +25,14 @@ const COURIER_NAMES: Record<string, string> = {
 }
 
 function TrackingWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>) {
+  const qc = useQueryClient()
   const [busy, setBusy] = useState(false)
   const [promptOpen, setPromptOpen] = useState(false)
 
   const fulfillments: any[] = (order as any).fulfillments ?? []
-  const courierFulfillments = fulfillments.filter(
-    (f: any) => f.provider_id === "fp_courier_courier" && f.data?.courier_id
-  )
+  // Courier data is mirrored onto fulfillment.data by the subscriber, whatever provider actually
+  // created the fulfilment — so key off that, not the provider id.
+  const courierFulfillments = fulfillments.filter((f: any) => f.data?.courier_id)
 
   if (courierFulfillments.length === 0) return null
 
@@ -46,7 +48,11 @@ function TrackingWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>
       )
       if (r.created) {
         toast.success(`Return recorded — ${r.items} item type(s) restocked`)
-        setTimeout(() => location.reload(), 800)
+        // Refetch in place instead of reloading the page: the native order panels and our
+        // order-processing panel + Cash Book all update on their own.
+        qc.invalidateQueries({ queryKey: ["orders"] })
+        qc.invalidateQueries({ queryKey: ["order-processing"] })
+        qc.invalidateQueries({ queryKey: ["accounting"] })
       } else {
         toast.info(r.message || "Nothing to return")
       }

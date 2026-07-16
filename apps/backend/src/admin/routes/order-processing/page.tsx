@@ -59,6 +59,7 @@ const OrderProcessingPage = () => {
       setPending(null)
       qc.invalidateQueries({ queryKey: ["order-processing"] })
       qc.invalidateQueries({ queryKey: ["orders"] })
+      qc.invalidateQueries({ queryKey: ["accounting"] })
     },
     onError: (e: Error) => toast.error(e.message),
   })
@@ -71,6 +72,10 @@ const OrderProcessingPage = () => {
   const { data, isLoading } = useQuery({
     queryKey: ["order-processing", "all"],
     queryFn: () => opApi.list({ type: "all" }),
+    // Keep the queue live: pick up courier-driven status changes and edits from the order pages
+    // without a manual refresh.
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
   })
 
   const everything = useMemo(() => data?.orders ?? [], [data])
