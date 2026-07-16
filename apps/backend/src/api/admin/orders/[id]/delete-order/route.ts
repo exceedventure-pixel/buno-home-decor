@@ -1,5 +1,5 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { MedusaError, Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils"
 
 import { computeOrderEconomics } from "../../../../../lib/orders/order-economics"
 import { ACCOUNTING_MODULE } from "../../../../../modules/accounting"
@@ -99,18 +99,19 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const opSvc: any = req.scope.resolve(ORDER_PROCESSING_MODULE)
 
   // 1. Release this order's reservations, or its units stay reserved against a ghost.
+  //    Line items come from query.graph (the same way reserve.ts reads them) rather than a
+  //    module list method, so this can't break on an API that isn't exposed.
   let reservationsReleased = 0
   try {
-    const lineItems = await orderModule.listOrderLineItems(
-      { order_id: orderId },
-      { select: ["id"] }
-    )
-    const itemIds = (lineItems ?? []).map((i: any) => i.id)
+    const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+    const { data } = await query.graph({
+      entity: "order",
+      fields: ["id", "items.id"],
+      filters: { id: orderId },
+    })
+    const itemIds = (((data?.[0] as any)?.items ?? []) as any[]).map((i) => i.id).filter(Boolean)
     if (itemIds.length) {
-      const reservations = await inventory.listReservationItems(
-        { line_item_id: itemIds },
-        { select: ["id"] }
-      )
+      const reservations = await inventory.listReservationItems({ line_item_id: itemIds })
       if (reservations?.length) {
         await inventory.deleteReservationItems(reservations.map((r: any) => r.id))
         reservationsReleased = reservations.length

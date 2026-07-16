@@ -14,8 +14,11 @@ import { rbacFetch, usePermissions } from "../lib/permissions"
  *      names the real shipped units / captured cash rather than guessing);
  *   2. typing the phrase.
  *
- * The button only renders for someone holding the high-risk `orders:delete-order` grant. That is
- * UI gating only — the server enforces both the permission and the phrase.
+ * ONE dialog drives both phases. An earlier version used two <Prompt>s toggled by a shared state,
+ * but Prompt.Action auto-closes its dialog, whose onOpenChange then reset the state — so the
+ * second dialog never opened. Here the phase advances with a PLAIN button that doesn't close the
+ * dialog; only Cancel / Esc close it. The button only renders for someone holding the high-risk
+ * `orders:delete-order` grant — UI gating only; the server enforces the permission and the phrase.
  */
 const CONFIRM_PHRASE = "delete order"
 
@@ -30,7 +33,8 @@ type Precheck = {
 function OrderDeleteWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>) {
   const orderId = (order as any).id
   const { can, isLoading: permsLoading } = usePermissions()
-  const [step, setStep] = useState<null | "confirm" | "type">(null)
+  const [open, setOpen] = useState(false)
+  const [phase, setPhase] = useState<"confirm" | "type">("confirm")
   const [typed, setTyped] = useState("")
 
   const allowed = can("orders", "delete-order")
@@ -38,7 +42,7 @@ function OrderDeleteWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrd
   const { data: precheck } = useQuery<Precheck>({
     queryKey: ["order-delete-precheck", orderId],
     queryFn: () => rbacFetch<Precheck>(`/orders/${orderId}/delete-order`),
-    enabled: allowed && step !== null,
+    enabled: allowed && open,
   })
 
   const del = useMutation({
@@ -57,6 +61,12 @@ function OrderDeleteWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrd
 
   if (permsLoading || !allowed) return null
 
+  const openFlow = () => {
+    setPhase("confirm")
+    setTyped("")
+    setOpen(true)
+  }
+
   const phraseOk = typed.trim().toLowerCase() === CONFIRM_PHRASE
 
   return (
@@ -70,80 +80,81 @@ function OrderDeleteWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrd
       </div>
 
       <div className="flex justify-end">
-        <Button size="small" variant="danger" onClick={() => setStep("confirm")}>
+        <Button size="small" variant="danger" onClick={openFlow}>
           Delete this order
         </Button>
       </div>
 
-      {/* Gate 1 — say exactly what will be erased. */}
-      <Prompt open={step === "confirm"} onOpenChange={(v) => !v && setStep(null)}>
+      <Prompt open={open} onOpenChange={(v) => !v && setOpen(false)}>
         <Prompt.Content>
-          <Prompt.Header>
-            <Prompt.Title>Delete order #{precheck?.display_id ?? ""}?</Prompt.Title>
-            <Prompt.Description>
-              This erases the order from Sales Insights, the Accounting dashboard and the Cash
-              Book. It cannot be undone from here.
-            </Prompt.Description>
-          </Prompt.Header>
+          {phase === "confirm" ? (
+            <>
+              <Prompt.Header>
+                <Prompt.Title>Delete order #{precheck?.display_id ?? ""}?</Prompt.Title>
+                <Prompt.Description>
+                  This erases the order from Sales Insights, the Accounting dashboard and the Cash
+                  Book. It cannot be undone from here.
+                </Prompt.Description>
+              </Prompt.Header>
 
-          {!!precheck?.warnings?.length && (
-            <div className="flex flex-col gap-y-2 px-6 pb-2">
-              {precheck.warnings.map((w, i) => (
-                <div
-                  key={i}
-                  className="rounded-lg border border-ui-tag-red-border bg-ui-tag-red-bg p-2.5"
-                >
-                  <Text size="xsmall" className="text-ui-tag-red-text">
-                    {w}
-                  </Text>
+              {!!precheck?.warnings?.length && (
+                <div className="flex flex-col gap-y-2 px-6 pb-2">
+                  {precheck.warnings.map((w, i) => (
+                    <div
+                      key={i}
+                      className="rounded-lg border border-ui-tag-red-border bg-ui-tag-red-bg p-2.5"
+                    >
+                      <Text size="xsmall" className="text-ui-tag-red-text">
+                        {w}
+                      </Text>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+
+              <Prompt.Footer>
+                <Prompt.Cancel>Cancel</Prompt.Cancel>
+                {/* Plain button — must NOT close the dialog, just advance the phase. */}
+                <Button size="small" variant="danger" onClick={() => setPhase("type")}>
+                  Continue
+                </Button>
+              </Prompt.Footer>
+            </>
+          ) : (
+            <>
+              <Prompt.Header>
+                <Prompt.Title>Type “{CONFIRM_PHRASE}” to confirm</Prompt.Title>
+                <Prompt.Description>
+                  Order #{precheck?.display_id ?? ""} will be erased from your books.
+                </Prompt.Description>
+              </Prompt.Header>
+
+              <div className="flex flex-col gap-y-2 px-6 pb-2">
+                <Label size="small">Confirmation</Label>
+                <Input
+                  autoFocus
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  placeholder={CONFIRM_PHRASE}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && phraseOk && !del.isPending) del.mutate()
+                  }}
+                />
+              </div>
+
+              <Prompt.Footer>
+                <Prompt.Cancel>Cancel</Prompt.Cancel>
+                <Button
+                  size="small"
+                  variant="danger"
+                  disabled={!phraseOk || del.isPending}
+                  onClick={() => phraseOk && del.mutate()}
+                >
+                  {del.isPending ? "Deleting…" : "Delete permanently"}
+                </Button>
+              </Prompt.Footer>
+            </>
           )}
-
-          <Prompt.Footer>
-            <Prompt.Cancel>Cancel</Prompt.Cancel>
-            <Prompt.Action
-              onClick={() => {
-                setTyped("")
-                setStep("type")
-              }}
-            >
-              Continue
-            </Prompt.Action>
-          </Prompt.Footer>
-        </Prompt.Content>
-      </Prompt>
-
-      {/* Gate 2 — type the phrase. A click can be a slip; typing this cannot. */}
-      <Prompt open={step === "type"} onOpenChange={(v) => !v && setStep(null)}>
-        <Prompt.Content>
-          <Prompt.Header>
-            <Prompt.Title>Type “{CONFIRM_PHRASE}” to confirm</Prompt.Title>
-            <Prompt.Description>
-              Order #{precheck?.display_id ?? ""} will be erased from your books.
-            </Prompt.Description>
-          </Prompt.Header>
-
-          <div className="flex flex-col gap-y-2 px-6 pb-2">
-            <Label size="small">Confirmation</Label>
-            <Input
-              autoFocus
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              placeholder={CONFIRM_PHRASE}
-            />
-          </div>
-
-          <Prompt.Footer>
-            <Prompt.Cancel>Cancel</Prompt.Cancel>
-            <Prompt.Action
-              disabled={!phraseOk || del.isPending}
-              onClick={() => phraseOk && del.mutate()}
-            >
-              {del.isPending ? "Deleting…" : "Delete permanently"}
-            </Prompt.Action>
-          </Prompt.Footer>
         </Prompt.Content>
       </Prompt>
     </Container>
