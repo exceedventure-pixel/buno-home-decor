@@ -138,6 +138,10 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|images|assets|png|svg|jpg|jpeg|gif|webp).*)",
+    // Next's generated metadata routes (icon, opengraph-image, …) have no file
+    // extension, so the `pathname.includes(".")` guard above never catches them.
+    // Without listing them here they get redirected to /:country/icon, which
+    // doesn't exist — and the favicon silently 404s.
+    "/((?!api|_next/static|_next/image|favicon.ico|icon|apple-icon|opengraph-image|twitter-image|manifest|robots|sitemap|images|assets|png|svg|jpg|jpeg|gif|webp).*)",
   ],
 }

@@ -15,15 +15,45 @@ import {
 // Re-export clsx as clx for compatibility
 export { clsx as clx }
 
+/**
+ * clsx concatenates, it does not resolve Tailwind conflicts. Tailwind emits font
+ * sizes in scale order (text-xs, text-sm, text-base, text-lg, …), so a component's
+ * built-in default would win over a caller's smaller size purely because it is
+ * emitted later — e.g. clsx("text-base", "text-sm") renders at text-base.
+ * Drop the default whenever the caller sets an unprefixed size of their own;
+ * responsive variants like "lg:text-3xl" are left alone, as they only apply
+ * above a breakpoint and should not suppress the base size.
+ */
+const BARE_TEXT_SIZE = /(?:^|\s)text-(?:xs|sm|base|lg|[2-9]?xl)(?:\s|$)/
+
+const defaultTextSize = (fallback: string, className?: string) =>
+  className && BARE_TEXT_SIZE.test(className) ? undefined : fallback
+
 // Text Component
+const TEXT_SIZE = {
+  xsmall: "text-xs",
+  small: "text-sm",
+  base: "text-base",
+  large: "text-lg",
+  xlarge: "text-xl",
+} as const
+
 type TextProps = HTMLAttributes<HTMLParagraphElement> & {
   as?: "p" | "span" | "div"
+  size?: keyof typeof TEXT_SIZE
 }
 
 export const Text = forwardRef<HTMLParagraphElement, TextProps>(
-  ({ className, as: Component = "p", children, ...props }, ref) => {
+  ({ className, as: Component = "p", size, children, ...props }, ref) => {
     return (
-      <Component ref={ref} className={clsx("text-base", className)} {...props}>
+      <Component
+        ref={ref}
+        className={clsx(
+          size ? TEXT_SIZE[size] : defaultTextSize("text-base", className),
+          className
+        )}
+        {...props}
+      >
         {children}
       </Component>
     )
@@ -32,6 +62,8 @@ export const Text = forwardRef<HTMLParagraphElement, TextProps>(
 Text.displayName = "Text"
 
 // Heading Component
+const HEADING_SIZE = { h1: "text-3xl", h2: "text-2xl", h3: "text-xl" } as const
+
 type HeadingProps = HTMLAttributes<HTMLHeadingElement> & {
   level?: "h1" | "h2" | "h3"
 }
@@ -43,9 +75,7 @@ export const Heading = forwardRef<HTMLHeadingElement, HeadingProps>(
         ref={ref}
         className={clsx(
           "font-semibold",
-          Component === "h1" && "text-3xl",
-          Component === "h2" && "text-2xl",
-          Component === "h3" && "text-xl",
+          defaultTextSize(HEADING_SIZE[Component], className),
           className
         )}
         {...props}

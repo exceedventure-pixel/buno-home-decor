@@ -22,7 +22,9 @@ const LocalizedClientLink = ({
   children?: React.ReactNode
   href: string
   className?: string
-  onClick?: () => void
+  // Callers need the event (e.g. preventDefault to open the cart drawer instead
+  // of navigating), so this must carry the anchor's click event.
+  onClick?: React.MouseEventHandler<HTMLAnchorElement>
   passHref?: true
   [x: string]: unknown
 }) => {

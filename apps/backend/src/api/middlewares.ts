@@ -10,7 +10,23 @@ import {
   AssignRolesSchema,
 } from "./admin/rbac/validators"
 
-const upload = multer({ storage: multer.memoryStorage() })
+// The upload routes buffer the whole file in memory before handing it to the File
+// module, so an unbounded upload is an easy way to exhaust the process. The admin
+// UI already declares accept="image/*"; enforce that server-side too, since the
+// attribute is only a client-side hint.
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 // 10 MB
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype?.startsWith("image/")) {
+      cb(new Error(`Unsupported file type: ${file.mimetype}. Images only.`))
+      return
+    }
+    cb(null, true)
+  },
+})
 
 export default defineMiddlewares([
   // RBAC authorization for every admin route. Admin authentication itself is

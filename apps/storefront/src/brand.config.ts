@@ -4,7 +4,6 @@ export type Brand = {
   /** Short company blurb shown in the footer brand column */
   description: string
   logoPath: string
-  faviconPath: string
   colors: {
     primary: string
     secondary: string
@@ -36,9 +35,9 @@ const brand: Brand = {
   description:
     "Your go-to destination for quality home decoration items at great prices, delivered fast with care to your door.",
 
-  // Place logo at /public/images/logo.svg and favicon at /public/favicon.ico
+  // Place logo at /public/images/logo.svg.
+  // The favicon is generated from storeName + colors.primary by src/app/icon.tsx.
   logoPath: "/images/logo.svg",
-  faviconPath: "/favicon.ico",
 
   colors: {
     primary: "#000000",

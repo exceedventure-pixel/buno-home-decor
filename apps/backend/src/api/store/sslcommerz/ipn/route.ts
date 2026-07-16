@@ -11,8 +11,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const val_id = body.val_id
   const tran_id = body.tran_id
   const cart_id = body.value_a  // stored as value_a in initiatePayment
-  const amount = body.amount
-  const currency = body.currency_type
 
   if (!val_id || !cart_id) {
     logger.warn("[sslcommerz:ipn] Missing val_id or cart_id (value_a)")
@@ -52,14 +50,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       return res.send("INVALID")
     }
 
-    // Amount sanity check (allow ±1 BDT tolerance for rounding)
-    const receivedAmount = parseFloat(validation.amount)
-    const sentAmount = parseFloat(amount)
-    if (Math.abs(receivedAmount - sentAmount) > 1) {
-      logger.error(`[sslcommerz:ipn] Amount mismatch: sent=${amount} received=${validation.amount}`)
-      return res.send("AMOUNT_MISMATCH")
-    }
-
     // Find the payment session via cart
     const cartModule = req.scope.resolve(Modules.CART) as any
     const cart = await cartModule.retrieveCart(cart_id, {
@@ -78,6 +68,42 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (!session) {
       logger.error(`[sslcommerz:ipn] No SSLCommerz session for cart ${cart_id}`)
       return res.send("NO_SESSION")
+    }
+
+    // This endpoint is public and cart_id arrives in the request body, so the
+    // validated transaction must be tied back to THIS session before we trust it.
+    // tran_id is generated server-side in initiatePayment and stored on the session,
+    // so a val_id issued for any other transaction cannot authorize this cart.
+    const sessionTranId = (session.data as Record<string, unknown> | null)?.tran_id
+    if (!sessionTranId || validation.tran_id !== sessionTranId) {
+      logger.error(
+        `[sslcommerz:ipn] tran_id mismatch for cart ${cart_id}: validated=${validation.tran_id} session=${sessionTranId}`
+      )
+      return res.send("TRAN_MISMATCH")
+    }
+
+    // Compare against the amount the session actually owes — never the request
+    // body, which the caller controls. ±1 BDT tolerance for gateway rounding.
+    const paidAmount = parseFloat(validation.amount)
+    const expectedAmount = Number(session.amount)
+    if (
+      !Number.isFinite(paidAmount) ||
+      !Number.isFinite(expectedAmount) ||
+      Math.abs(paidAmount - expectedAmount) > 1
+    ) {
+      logger.error(
+        `[sslcommerz:ipn] Amount mismatch for cart ${cart_id}: paid=${validation.amount} expected=${expectedAmount}`
+      )
+      return res.send("AMOUNT_MISMATCH")
+    }
+
+    const sessionCurrency = String(session.currency_code ?? "").toLowerCase()
+    const paidCurrency = String(validation.currency_type ?? "").toLowerCase()
+    if (sessionCurrency && paidCurrency && sessionCurrency !== paidCurrency) {
+      logger.error(
+        `[sslcommerz:ipn] Currency mismatch for cart ${cart_id}: paid=${paidCurrency} expected=${sessionCurrency}`
+      )
+      return res.send("CURRENCY_MISMATCH")
     }
 
     // Update session data to mark as validated

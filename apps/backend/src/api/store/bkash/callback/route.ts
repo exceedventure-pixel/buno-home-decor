@@ -103,6 +103,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       throw new Error(`No bKash session for cart ${cart_id}`)
     }
 
+    // cart_id comes from bKash's own execute response rather than the query, but
+    // still confirm the executed amount covers what the session owes before
+    // authorizing it. ±1 BDT tolerance for gateway rounding.
+    const paidAmount = parseFloat(execJson.amount ?? "")
+    const expectedAmount = Number(session.amount)
+    if (
+      !Number.isFinite(paidAmount) ||
+      !Number.isFinite(expectedAmount) ||
+      Math.abs(paidAmount - expectedAmount) > 1
+    ) {
+      throw new Error(
+        `Amount mismatch for cart ${cart_id}: paid=${execJson.amount} expected=${expectedAmount}`
+      )
+    }
+
     // Update session to mark validated
     const paymentModule = req.scope.resolve(Modules.PAYMENT) as any
     await paymentModule.updatePaymentSession({
