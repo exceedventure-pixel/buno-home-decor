@@ -85,14 +85,25 @@ function CategorySection({
 function ContactSettings() {
   const [whatsapp, setWhatsapp] = useState("")
   const [phone, setPhone] = useState("")
+  const [email, setEmail] = useState("")
+  const [address, setAddress] = useState("")
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    adminFetch<{ setting: { whatsapp_number: string | null; order_phone: string | null } }>("/store-settings")
+    adminFetch<{
+      setting: {
+        whatsapp_number: string | null
+        order_phone: string | null
+        store_email: string | null
+        store_address: string | null
+      }
+    }>("/store-settings")
       .then(({ setting }) => {
         setWhatsapp(setting?.whatsapp_number ?? "")
         setPhone(setting?.order_phone ?? "")
+        setEmail(setting?.store_email ?? "")
+        setAddress(setting?.store_address ?? "")
       })
       .catch(() => toast.error("Failed to load settings"))
       .finally(() => setLoading(false))
@@ -106,6 +117,8 @@ function ContactSettings() {
         body: JSON.stringify({
           whatsapp_number: whatsapp.trim() || null,
           order_phone: phone.trim() || null,
+          store_email: email.trim() || null,
+          store_address: address.trim() || null,
         }),
       })
       toast.success("Settings saved")
@@ -129,14 +142,28 @@ function ContactSettings() {
         <div className="flex flex-col gap-y-1">
           <Label>Order Phone Number</Label>
           <Text size="xsmall" className="text-ui-fg-muted">
-            Phone number for the "Call For Order" button. Leave blank to hide.
+            Phone for the "Call For Order" button and printed invoices. Leave blank to hide.
           </Text>
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+8801712345678" disabled={loading} />
+        </div>
+        <div className="flex flex-col gap-y-1">
+          <Label>Store Email</Label>
+          <Text size="xsmall" className="text-ui-fg-muted">
+            Shown on printed invoices &amp; packing slips.
+          </Text>
+          <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="hello@yourstore.com" disabled={loading} />
+        </div>
+        <div className="flex flex-col gap-y-1">
+          <Label>Store Address</Label>
+          <Text size="xsmall" className="text-ui-fg-muted">
+            Your return / pickup address, printed on invoices &amp; packing slips.
+          </Text>
+          <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Banktown, Savar, Dhaka 1340, Bangladesh" disabled={loading} />
         </div>
       </div>
       <div className="flex justify-end">
         <Button onClick={handleSave} isLoading={saving} disabled={loading || saving}>
-          Save Contact Buttons
+          Save Contact &amp; Invoice Details
         </Button>
       </div>
     </Container>
@@ -155,7 +182,7 @@ function IntegrationSettings() {
         Each card shows whether it is configured and lets you turn it on or off.
       </Text>
 
-      <CategorySection title="Storefront Contact Buttons" description="WhatsApp & call buttons on product pages" icon={ChatBubbleLeftRight} defaultOpen>
+      <CategorySection title="Contact & Invoice Details" description="WhatsApp, phone, email & address — used on the storefront and printed invoices" icon={ChatBubbleLeftRight} defaultOpen>
         <ContactSettings />
       </CategorySection>
 

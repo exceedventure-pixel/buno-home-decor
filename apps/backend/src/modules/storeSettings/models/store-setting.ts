@@ -4,6 +4,10 @@ const StoreSetting = model.define("store_setting", {
   id: model.id().primaryKey(),
   whatsapp_number: model.text().nullable(),
   order_phone: model.text().nullable(),
+  // Shown on printed invoices & packing slips (the store name, tagline and logo are fixed brand
+  // assets baked into the print template; these are the parts that change per store).
+  store_email: model.text().nullable(),
+  store_address: model.text().nullable(),
   product_card_style: model.text().nullable(),
   product_card_fields: model.json().nullable(),
   card_button_layout: model.text().nullable(),

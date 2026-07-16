@@ -5,6 +5,8 @@ import { emailEnvConfigured, smsEnvConfigured } from "../../../lib/integration-e
 const DEFAULTS = {
   whatsapp_number: null,
   order_phone: null,
+  store_email: null,
+  store_address: null,
   product_card_style: null,
   product_card_fields: null,
   card_button_layout: null,
@@ -31,7 +33,7 @@ const DEFAULTS = {
 
 // Non-secret, admin-editable fields. Secrets (API keys, tokens) live only in env.
 const SIMPLE_KEYS = [
-  "whatsapp_number", "order_phone",
+  "whatsapp_number", "order_phone", "store_email", "store_address",
   "product_card_style", "product_card_fields",
   "card_button_layout", "card_action_mode", "card_badge_settings",
   "card_text_align", "card_grid_columns",
