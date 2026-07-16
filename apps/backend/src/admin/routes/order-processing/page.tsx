@@ -107,7 +107,6 @@ const OrderProcessingPage = () => {
       revenue: sum((r) => r.product_revenue),
       delivery_margin: sum((r) => r.delivery_margin),
       cogs: sum((r) => r.cogs),
-      packaging: sum((r) => r.packaging),
       outstanding: sum((r) => r.outstanding),
       net_profit: sum((r) => r.net_profit),
     }
@@ -182,7 +181,7 @@ const OrderProcessingPage = () => {
               hint="charged − courier cost"
               accent={t.delivery_margin >= 0 ? "green" : "red"}
             />
-            <Kpi label="COGS + packaging" value={money(t.cogs + t.packaging, cur)} accent="red" />
+            <Kpi label="COGS" value={money(t.cogs, cur)} accent="red" />
             <Kpi
               label="COD outstanding"
               value={money(t.outstanding, cur)}

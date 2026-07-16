@@ -31,7 +31,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
         title: v.title,
         sku: v.sku,
         cost: Number(row?.cost ?? 0),
-        packaging_cost: Number(row?.packaging_cost ?? 0),
       }
     }),
   })
@@ -41,7 +40,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const svc = req.scope.resolve(PRODUCT_COST_MODULE)
   const { costs } = (req.body ?? {}) as {
-    costs?: { variant_id: string; cost?: number | string; packaging_cost?: number | string }[]
+    costs?: { variant_id: string; cost?: number | string }[]
   }
   if (!costs?.length) {
     return res.status(400).json({ error: "costs[] is required" })
@@ -51,7 +50,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const existing = await svc.listVariantCosts({ variant_id: variantIds })
   const existingMap = new Map(existing.map((e: any) => [e.variant_id, e]))
 
-  // Only touch a field the caller actually sent, so saving a cost doesn't wipe packaging.
+  // Only touch a field the caller actually sent.
   const nonNeg = (v: unknown) => Math.max(0, Number(v) || 0)
   const toCreate: any[] = []
   const toUpdate: any[] = []
@@ -60,14 +59,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     if (row) {
       const patch: any = { id: row.id }
       if (c.cost !== undefined) patch.cost = nonNeg(c.cost)
-      if (c.packaging_cost !== undefined) patch.packaging_cost = nonNeg(c.packaging_cost)
       toUpdate.push(patch)
     } else {
-      toCreate.push({
-        variant_id: c.variant_id,
-        cost: nonNeg(c.cost),
-        packaging_cost: nonNeg(c.packaging_cost),
-      })
+      toCreate.push({ variant_id: c.variant_id, cost: nonNeg(c.cost) })
     }
   }
 

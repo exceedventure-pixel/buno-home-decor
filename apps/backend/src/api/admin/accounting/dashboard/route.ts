@@ -52,19 +52,6 @@ export async function GET(
   const fixed_assets_value = ownedAssets.reduce((s: number, a: any) => s + Number(a.cost), 0)
 
   /**
-   * THE PACKAGING POOL — money tied up in boxes, tape and wrap you are still holding.
-   *
-   * Bought comes from the ledger (a cash->asset swap). Used is DERIVED from orders (each
-   * non-cancelled order drew its per-unit presets when placed). The pool is what's left.
-   *
-   * A NEGATIVE pool is not a bug — it is the signal this exists to give: your per-product
-   * packaging presets are lower than what packaging is really costing you. Raise them.
-   */
-  const packaging_bought = ledger.packaging_purchases
-  const packaging_used_lifetime = lifetimeSales.metrics.packaging_used
-  const packaging_pool = packaging_bought - packaging_used_lifetime
-
-  /**
    * CASH ON HAND — and the reason revenue is never journaled.
    *
    * `ledger.cash_delta` is only the money WE moved: capital in and out, restocks, assets,
@@ -78,20 +65,17 @@ export async function GET(
   const cash_on_hand = ledger.cash_delta + cash_from_sales
 
   // "The money that is rolling in the ecommerce": everything not nailed down in equipment —
-  // stock on the shelf, packaging in the pool, cash in the account, and cash a courier owes us.
-  const working_capital =
-    inventory.inventory_at_cost + packaging_pool + cash_on_hand + cod_receivables
+  // stock on the shelf, cash in the account, and cash a courier owes us. Packaging is NOT here:
+  // it's expensed the day it's bought, so there is no packaging asset to carry.
+  const working_capital = inventory.inventory_at_cost + cash_on_hand + cod_receivables
 
   const net_worth = fixed_assets_value + working_capital
 
   // What the business has earned on top of what the partners put in.
   const retained_earnings = net_worth - ledger.total_invested
 
-  // Packaging consumed by orders placed in the period is a real cost (the boxes are gone),
-  // so it reduces net profit alongside the ledger expenses.
-  const packaging_used_period = periodSales.metrics.packaging_used
   // Inventory written off in the period (shrinkage/damage), net of any `found` stock. A
-  // non-cash P&L cost derived from the FIFO replay, exactly like packaging.
+  // non-cash P&L cost derived from the FIFO replay.
   const inventory_adjustments =
     periodSales.metrics.inventory_writeoff - periodSales.metrics.inventory_found
 
@@ -148,11 +132,7 @@ export async function GET(
    * and every parcel for its courier twice.
    */
   const operating_expenses =
-    periodExpenses.total -
-    production_cost -
-    courier_cost +
-    packaging_used_period +
-    inventory_adjustments
+    periodExpenses.total - production_cost - courier_cost + inventory_adjustments
 
   const net_profit = gross + delivery_margin + other_income - operating_expenses
 
@@ -180,13 +160,12 @@ export async function GET(
       fixed_assets_value,
       cash_on_hand,
       cod_receivables,
-      packaging_pool,
     },
 
     packaging: {
-      bought: packaging_bought,
-      used: packaging_used_lifetime,
-      pool: packaging_pool,
+      // Lifetime spend on packaging. Not an asset — expensed when bought.
+      bought: ledger.packaging_purchases,
+      bought_in_period: periodExpenses.packaging_purchase,
     },
 
     equity: {
@@ -218,7 +197,8 @@ export async function GET(
       courier_fee: periodExpenses.courier_fee,
       other_expense: periodExpenses.other_expense,
       refund: periodExpenses.refund,
-      packaging_used: packaging_used_period,
+      // What you spent on packaging in the period — a straight expense on the purchase date.
+      packaging: periodExpenses.packaging_purchase,
       inventory_adjustments,
       other_income,
       // Delivery, both sides — so you can see whether carrying parcels makes or loses money.

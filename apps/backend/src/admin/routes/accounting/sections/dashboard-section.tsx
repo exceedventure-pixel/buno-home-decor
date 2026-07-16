@@ -76,12 +76,6 @@ export function DashboardSection() {
             value={money(data.assets.inventory_at_cost, cur)}
             hint={`${data.assets.units_in_stock.toLocaleString()} units in stock`}
           />
-          <Kpi
-            label="Packaging pool"
-            value={money(data.assets.packaging_pool, cur)}
-            hint={data.assets.packaging_pool < 0 ? "Negative — presets too low" : "Packaging on hand"}
-            accent={data.assets.packaging_pool < 0 ? "red" : "base"}
-          />
           <Kpi label="Fixed assets" value={money(data.assets.fixed_assets_value, cur)} />
           <Kpi label="Cash on hand" value={money(data.assets.cash_on_hand, cur)} />
           <Kpi

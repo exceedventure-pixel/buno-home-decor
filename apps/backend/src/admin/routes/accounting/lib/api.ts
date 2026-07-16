@@ -138,9 +138,8 @@ export type Dashboard = {
     fixed_assets_value: number
     cash_on_hand: number
     cod_receivables: number
-    packaging_pool: number
   }
-  packaging: { bought: number; used: number; pool: number }
+  packaging: { bought: number; bought_in_period: number }
   equity: {
     capital_contributed: number
     partner_drawings: number
@@ -170,7 +169,8 @@ export type Dashboard = {
     courier_fee: number
     other_expense: number
     refund: number
-    packaging_used: number
+    /** Packaging bought in the period — expensed on the purchase date. */
+    packaging: number
     inventory_adjustments: number
     other_income: number
     delivery_charged: number

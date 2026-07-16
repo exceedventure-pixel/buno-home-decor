@@ -18,6 +18,7 @@ export type PermissionAction =
   | "delete"
   | "manage"
   | "refund"
+  | "delete-order"
   | "store-reset"
 
 export type ResourceGroup =
@@ -37,8 +38,14 @@ export type ResourceDef = {
   actions: PermissionAction[]
 }
 
-// Actions NOT implied by ":manage" — they must be granted explicitly.
-export const HIGH_RISK_ACTIONS: PermissionAction[] = ["refund", "store-reset"]
+/**
+ * Actions NOT implied by ":manage" — they must be granted explicitly.
+ *
+ * `delete-order` is separate from the ordinary `delete` on purpose. Erasing an order wipes it out
+ * of the books entirely, so it must never ride in on `orders:manage` the way plain delete does —
+ * otherwise every Store Manager would silently have it.
+ */
+export const HIGH_RISK_ACTIONS: PermissionAction[] = ["refund", "delete-order", "store-reset"]
 
 const STD: PermissionAction[] = ["read", "write", "delete", "manage"]
 
@@ -81,7 +88,7 @@ export const RESOURCES: ResourceDef[] = [
     key: "orders",
     label: "Orders",
     group: "sales",
-    actions: ["read", "write", "delete", "manage", "refund"],
+    actions: ["read", "write", "delete", "manage", "refund", "delete-order"],
   },
   { key: "draft_orders", label: "Draft Orders", group: "sales", actions: STD },
   { key: "returns", label: "Returns / Exchanges / Claims", group: "sales", actions: STD },
@@ -221,6 +228,9 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ).map((k) => `${k}:manage`),
       "rbac:read",
       "orders:refund",
+      // Erasing an order is high-risk, so `orders:manage` above doesn't cover it. Admins get it
+      // explicitly; everyone else has to be granted it deliberately.
+      "orders:delete-order",
     ],
   },
   {

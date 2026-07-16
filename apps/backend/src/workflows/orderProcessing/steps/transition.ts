@@ -300,55 +300,29 @@ export type SetIssueInput = {
 }
 
 /**
- * Set the issue — and where the issue changes what happens to the GOODS, make that happen.
+ * Set the issue. Recording it is the whole job — the goods need no further movement.
  *
- * Damaged is the one that matters: those units are gone. Putting them back on the shelf would
- * invent stock that doesn't exist and hide a real loss, so instead they're written off at their
- * FIFO cost. That write-off is what makes damage show up as the cost it actually is.
+ * DAMAGED USED TO WRITE THE STOCK OFF HERE, AND THAT DEDUCTED IT TWICE.
+ *
+ * The units it wrote off were the ones that shipped and never came back — but shipping is exactly
+ * what already took them off the shelf. The FIFO engine counts an order's draw AND a stock
+ * movement as two separate reductions, so a damaged parcel removed its units from inventory a
+ * second time and charged their cost a second time. Inventory read low and the loss read double.
+ *
+ * A parcel destroyed in transit needs no stock event at all: the fulfilment already removed the
+ * goods. What makes it a loss is that no money comes in for them, which order-economics handles by
+ * zeroing the revenue on a damaged order (see `goodsDestroyed` there).
+ *
+ * Goods that come BACK broken are a different story and already work: the return restocks them,
+ * and they're written off from the product page like any other shrinkage.
  */
 export const setOrderIssueStep = createStep(
   "set-order-issue",
   async (input: SetIssueInput, { container }: { container: MedusaContainer }) => {
     const svc: any = container.resolve(ORDER_PROCESSING_MODULE)
-    const costSvc: any = container.resolve(PRODUCT_COST_MODULE)
-    const query = container.resolve(ContainerRegistrationKeys.QUERY)
 
     const wf = await ensureWorkflow(container, input.order_id)
     const from: IssueStatus = wf.issue_status
-
-    const movementIds: string[] = []
-
-    if (issueWritesOffGoods(input.issue) && !issueWritesOffGoods(from)) {
-      // Write off every unit that shipped and never came back — they were destroyed in transit.
-      const { data } = await query.graph({
-        entity: "order",
-        fields: [
-          "id",
-          "items.variant_id",
-          "items.detail.fulfilled_quantity",
-          "items.detail.return_received_quantity",
-        ],
-        filters: { id: input.order_id },
-      })
-
-      for (const it of ((data?.[0] as any)?.items ?? []) as any[]) {
-        const lost =
-          Number(it.detail?.fulfilled_quantity ?? 0) -
-          Number(it.detail?.return_received_quantity ?? 0)
-        if (!it.variant_id || lost <= 0) continue
-
-        const [m] = await costSvc.createStockMovements([
-          {
-            variant_id: it.variant_id,
-            date: new Date(),
-            quantity: lost,
-            reason: "damage",
-            note: `Damaged in transit — order ${input.order_id}`,
-          },
-        ])
-        movementIds.push(m.id)
-      }
-    }
 
     await svc.updateOrderWorkflows([{ id: wf.id, issue_status: input.issue }])
     await svc.createOrderStatusEvents([
@@ -364,18 +338,13 @@ export const setOrderIssueStep = createStep(
     ])
 
     return new StepResponse(
-      { order_id: input.order_id, issue: input.issue, written_off: movementIds.length },
-      { wf_id: wf.id, from, movementIds }
+      { order_id: input.order_id, issue: input.issue },
+      { wf_id: wf.id, from }
     )
   },
-  async (
-    comp: { wf_id: string; from: IssueStatus; movementIds: string[] } | undefined,
-    { container }
-  ) => {
+  async (comp: { wf_id: string; from: IssueStatus } | undefined, { container }) => {
     if (!comp) return
     const svc: any = container.resolve(ORDER_PROCESSING_MODULE)
-    const costSvc: any = container.resolve(PRODUCT_COST_MODULE)
     await svc.updateOrderWorkflows([{ id: comp.wf_id, issue_status: comp.from }])
-    if (comp.movementIds.length) await costSvc.deleteStockMovements(comp.movementIds)
   }
 )

@@ -33,7 +33,6 @@ export const LEDGER_CATEGORIES = [
 
   // Assets: cash converted into something you still own. Not an expense.
   "inventory_purchase",
-  "packaging_purchase",
   "fixed_asset",
 
   // Real P&L expenses: money that is simply gone.
@@ -41,6 +40,8 @@ export const LEDGER_CATEGORIES = [
   "courier_fee",
   "other_expense",
   "refund",
+  // Boxes, tape, wrap. Expensed the day it is bought — see CATEGORY_META below.
+  "packaging_purchase",
   // What a pre-order/custom order cost to produce. Unlike a restock (an asset that becomes COGS
   // when it sells), made-to-order goods ship immediately, so their cost is an expense straight
   // away — and it is that order's cost of goods.
@@ -91,12 +92,12 @@ export const CATEGORY_META: Record<LedgerCategory, CategoryMeta> = {
     help: "Cash became goods. NOT an expense — it becomes COGS only when the item actually sells.",
   },
   packaging_purchase: {
-    label: "Packaging purchase (tops up the pool)",
-    klass: "asset",
+    label: "Packaging purchase",
+    klass: "expense",
     direction: "out",
     help:
-      "Cash became boxes, tape and bubble wrap. NOT an expense — it becomes a cost only as " +
-      "orders draw their packaging preset out of the pool.",
+      "Boxes, tape and bubble wrap. A real expense, taken out of cash on the day you buy it — " +
+      "the same way your physical book records it.",
   },
   fixed_asset: {
     label: "Fixed asset purchase",
@@ -120,7 +121,7 @@ export const CATEGORY_META: Record<LedgerCategory, CategoryMeta> = {
     label: "Other expense",
     klass: "expense",
     direction: "out",
-    help: "Rent, utilities, salaries, packaging. A real expense.",
+    help: "Rent, utilities, salaries. A real expense.",
   },
   refund: {
     label: "Refund (outside Medusa only)",

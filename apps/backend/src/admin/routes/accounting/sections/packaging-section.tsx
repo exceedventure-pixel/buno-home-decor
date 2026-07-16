@@ -5,31 +5,47 @@ import {
   FocusModal,
   Input,
   Label,
+  Select,
   Table,
   Text,
   toast,
   usePrompt,
 } from "@medusajs/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 
 import { Kpi, money } from "../../../lib/kpi"
 import { api, type LedgerEntry } from "../lib/api"
+
+/**
+ * Packaging = what you SPENT on boxes, tape and wrap, dated.
+ *
+ * There is no pool and no per-product preset: packaging is expensed straight out of cash the day
+ * it's bought, exactly the way the physical book records it. So all this page owes you is the log
+ * of purchases and what a given month cost.
+ */
+const cur = "bdt"
+const ALL = "all"
+
+const monthKey = (iso: string) => {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
+const monthLabel = (key: string) => {
+  const [y, m] = key.split("-").map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+}
 
 export function PackagingSection() {
   const qc = useQueryClient()
   const prompt = usePrompt()
   const [open, setOpen] = useState(false)
+  const [month, setMonth] = useState<string>(ALL)
 
-  // Pool figures (bought / used / remaining) come from the dashboard, which derives
-  // "used" from orders. The purchases list comes from the ledger.
-  const { data: dash, isLoading: dashLoading } = useQuery({
-    queryKey: ["accounting", "dashboard"],
-    queryFn: () => api.dashboard(),
-  })
-  const { data: purchases, isLoading: listLoading } = useQuery({
+  const { data: purchases, isLoading } = useQuery({
     queryKey: ["accounting", "ledger", "packaging"],
-    queryFn: () => api.ledger({ category: "packaging_purchase", limit: 100 }),
+    queryFn: () => api.ledger({ category: "packaging_purchase", limit: 500 }),
   })
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["accounting"] })
@@ -46,12 +62,28 @@ export function PackagingSection() {
   const onDelete = async (e: LedgerEntry) => {
     const ok = await prompt({
       title: "Delete this packaging purchase?",
-      description: `${money(e.amount, "bdt")} — removes it from the pool.`,
+      description: `${money(e.amount, cur)} — this removes the expense from your books.`,
     })
     if (ok) del.mutate(e.id)
   }
 
-  if (dashLoading || listLoading) {
+  const all = useMemo(() => purchases?.ledger_entries ?? [], [purchases])
+
+  // Months that actually have purchases, newest first — no empty options.
+  const months = useMemo(() => {
+    const set = new Set(all.map((e) => monthKey(e.entry_date)))
+    return [...set].sort().reverse()
+  }, [all])
+
+  const rows = useMemo(
+    () => (month === ALL ? all : all.filter((e) => monthKey(e.entry_date) === month)),
+    [all, month]
+  )
+
+  const shownTotal = useMemo(() => rows.reduce((s, e) => s + Number(e.amount || 0), 0), [rows])
+  const lifetimeTotal = useMemo(() => all.reduce((s, e) => s + Number(e.amount || 0), 0), [all])
+
+  if (isLoading) {
     return (
       <div className="flex justify-center py-16 text-ui-fg-subtle">
         <Spinner className="animate-spin" />
@@ -59,18 +91,14 @@ export function PackagingSection() {
     )
   }
 
-  const cur = "bdt"
-  const pool = dash?.packaging?.pool ?? 0
-  const rows = purchases?.ledger_entries ?? []
-
   return (
     <div className="flex flex-col gap-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <Text weight="plus">Packaging pool</Text>
+          <Text weight="plus">Packaging</Text>
           <Text size="small" className="text-ui-fg-subtle">
-            Buy packaging to top up the pool. Each order draws its per-unit presets out as it's
-            placed. Set the preset for each product on its product page (Cost &amp; Packaging).
+            What you spent on boxes, tape and wrap. Taken out of cash on the day you buy it — a
+            real expense, not stock.
           </Text>
         </div>
         <Button size="small" variant="secondary" onClick={() => setOpen(true)}>
@@ -78,32 +106,34 @@ export function PackagingSection() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <Kpi label="Packaging bought" value={money(dash?.packaging?.bought ?? 0, cur)} />
-        <Kpi
-          label="Packaging used"
-          value={money(dash?.packaging?.used ?? 0, cur)}
-          hint="Drawn by orders (per unit)"
-        />
-        <Kpi
-          label="Pool remaining"
-          value={money(pool, cur)}
-          hint={pool < 0 ? "Negative — raise your presets" : "Packaging on hand"}
-          accent={pool < 0 ? "red" : "base"}
-          emphasis
-        />
+      <div className="flex items-end justify-between gap-3">
+        <div className="flex flex-col gap-y-1">
+          <Label size="small">Month</Label>
+          <Select value={month} onValueChange={setMonth}>
+            <Select.Trigger className="w-56">
+              <Select.Value />
+            </Select.Trigger>
+            <Select.Content>
+              <Select.Item value={ALL}>All time</Select.Item>
+              {months.map((m) => (
+                <Select.Item key={m} value={m}>
+                  {monthLabel(m)}
+                </Select.Item>
+              ))}
+            </Select.Content>
+          </Select>
+        </div>
       </div>
 
-      {pool < 0 && (
-        <div className="rounded-lg border border-ui-tag-red-border bg-ui-tag-red-bg p-3">
-          <Text size="small" className="text-ui-tag-red-text">
-            The pool is negative: orders have drawn more packaging than you've bought. That
-            usually means your per-product packaging presets are lower than what packaging
-            actually costs you. Raise the presets on your product pages, or record the
-            packaging you've bought.
-          </Text>
-        </div>
-      )}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Kpi
+          label={month === ALL ? "Packaging bought (all time)" : `Packaging bought — ${monthLabel(month)}`}
+          value={money(shownTotal, cur)}
+          hint={`${rows.length} purchase${rows.length === 1 ? "" : "s"}`}
+          emphasis
+        />
+        <Kpi label="Packaging bought (all time)" value={money(lifetimeTotal, cur)} />
+      </div>
 
       <Text size="small" weight="plus" className="mt-2 text-ui-fg-subtle">
         Packaging purchases
@@ -147,7 +177,9 @@ export function PackagingSection() {
               <Table.Row>
                 <Table.Cell colSpan={4}>
                   <Text size="small" className="py-4 text-ui-fg-muted">
-                    No packaging purchases yet.
+                    {all.length === 0
+                      ? "No packaging purchases yet."
+                      : "No packaging bought in this month."}
                   </Text>
                 </Table.Cell>
               </Table.Row>
@@ -201,8 +233,8 @@ function BuyModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => vo
         <FocusModal.Body className="flex flex-col items-center py-8">
           <div className="flex w-full max-w-lg flex-col gap-y-4">
             <Text size="small" className="text-ui-fg-subtle">
-              This tops up the packaging pool. It's an asset, not an expense — the money
-              becomes a cost only as orders draw packaging out of the pool.
+              A real expense: this comes straight out of cash on the date you pick, and reduces
+              that month's profit.
             </Text>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-y-1">

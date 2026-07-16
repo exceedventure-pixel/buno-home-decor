@@ -47,12 +47,12 @@ export const CATEGORY_META: Record<string, CategoryMeta> = {
     help: "Cash became goods. NOT an expense — it becomes COGS only when the item actually sells.",
   },
   packaging_purchase: {
-    label: "Packaging purchase (tops up the pool)",
-    klass: "asset",
+    label: "Packaging purchase",
+    klass: "expense",
     direction: "out",
     help:
-      "Cash became boxes and wrap. NOT an expense — it becomes a cost as orders draw their " +
-      "packaging preset out of the pool.",
+      "Boxes, tape and wrap. A real expense, taken out of cash on the day you buy it — the " +
+      "same way your physical book records it.",
   },
   fixed_asset: {
     label: "Fixed asset purchase",
@@ -76,7 +76,7 @@ export const CATEGORY_META: Record<string, CategoryMeta> = {
     label: "Other expense",
     klass: "expense",
     direction: "out",
-    help: "Rent, utilities, salaries, packaging. A real expense.",
+    help: "Rent, utilities, salaries. A real expense.",
   },
   refund: {
     label: "Refund (outside Medusa only)",

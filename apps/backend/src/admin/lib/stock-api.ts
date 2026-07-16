@@ -56,7 +56,6 @@ export type VariantStock = {
   location: { id: string; name: string } | null
   setup_problem: SetupProblem | null
   latest_cost: number
-  packaging_cost: number
   batches: Batch[]
   movements: VariantMovement[]
 }
@@ -110,7 +109,6 @@ export const stockApi = {
         title: string
         sku: string | null
         cost: number
-        packaging_cost: number
       }[]
     }>(`/variant-costs?product_id=${productId}`),
   saveCosts: (body: unknown) =>

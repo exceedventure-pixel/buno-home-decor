@@ -1,13 +1,12 @@
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
-import { PRODUCT_COST_MODULE } from "../../modules/productCost"
 import { computeFifoCosting, EXCLUDED_FULFILLMENT } from "./fifo-costing"
 
 /**
  * Revenue / COGS / gross profit over Medusa's own orders.
  *
- * Revenue, returns, COD and packaging are computed here from Medusa's orders. COGS is NOT —
+ * Revenue, returns and COD are computed here from Medusa's orders. COGS is NOT —
  * it now comes from the FIFO engine (lib/insights/fifo-costing.ts), so cost-of-goods and
  * the value of stock on the shelf are two reads of the SAME batch replay and can't drift.
  *
@@ -32,11 +31,8 @@ export type SalesMetrics = {
   avg_order_value: number
   returned_orders: number
   returned_value: number
-  // Packaging drawn from the pool: every non-cancelled order draws (unit preset x quantity)
-  // when it is placed. Not netted for returns — the box is spent even if the goods come back.
-  packaging_used: number
   // Non-cash inventory write-off (shrinkage/damage) at FIFO cost, for stock lost in range.
-  // A real cost that reduces net profit, the same way packaging_used does.
+  // A real cost that reduces net profit.
   inventory_writeoff: number
   // Value of `found` stock added in range — a non-cash gain that nets against write-offs.
   inventory_found: number
@@ -72,18 +68,11 @@ export async function computeSalesMetrics(
   range: SalesRange
 ): Promise<SalesMetricsResult> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
-  const costSvc: any = container.resolve(PRODUCT_COST_MODULE)
 
   const { from, to } = range
 
   // COGS + the missing-cost warning now come from the FIFO batch replay, not a flat cost.
   const fifo = await computeFifoCosting(container, { from, to })
-
-  // Packaging-preset lookup stays here — packaging is still a flat per-variant preset.
-  const allCosts = await costSvc.listVariantCosts({}, { take: 100000 })
-  const packagingMap = new Map<string, number>(
-    allCosts.map((c: any) => [c.variant_id, Number(c.packaging_cost) || 0])
-  )
 
   /**
    * Orders in the range — fetched as TWO queries, deliberately.
@@ -216,18 +205,6 @@ export async function computeSalesMetrics(
   const grossProfit = productRevenue - cogs
   const marginPct = productRevenue > 0 ? (grossProfit / productRevenue) * 100 : 0
 
-  // PACKAGING USED — drawn "when placed", so this counts EVERY non-cancelled order, not
-  // just the fulfilled ones that count toward revenue. Full quantity, no return netting:
-  // once a parcel is packed, that packaging is spent regardless of what happens next.
-  let packagingUsed = 0
-  for (const o of orders) {
-    if (o.status === "canceled" || o.status === "draft") continue
-    for (const it of o.items || []) {
-      const preset = packagingMap.get(it.variant_id)
-      if (preset) packagingUsed += preset * (Number(it.quantity) || 0)
-    }
-  }
-
   return {
     currency_code: currency,
     counted_orders: counted.length,
@@ -246,7 +223,6 @@ export async function computeSalesMetrics(
       avg_order_value: counted.length ? totalRevenue / counted.length : 0,
       returned_orders: returnedOrders,
       returned_value: returnedValue,
-      packaging_used: packagingUsed,
       inventory_writeoff: fifo.shrinkage_value_in_range,
       inventory_found: fifo.found_value_in_range,
     },

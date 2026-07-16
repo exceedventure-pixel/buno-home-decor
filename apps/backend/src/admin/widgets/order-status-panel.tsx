@@ -366,8 +366,7 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
       <div className="flex flex-col gap-y-1 rounded-lg bg-ui-bg-subtle p-3">
         <Text size="xsmall" className="text-ui-fg-muted">
           Revenue {money(o.product_revenue, cur)} + delivery {money(o.delivery_charged, cur)} −
-          goods {money(o.cogs, cur)} − packaging {money(o.packaging, cur)} − courier{" "}
-          {money(o.courier_cost, cur)}
+          goods {money(o.cogs, cur)} − courier {money(o.courier_cost, cur)}
           {o.write_off > 0 ? ` − written off ${money(o.write_off, cur)}` : ""}
         </Text>
         <Text

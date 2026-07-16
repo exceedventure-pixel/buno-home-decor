@@ -7,7 +7,9 @@ export type Me = {
   is_super_admin: boolean
 }
 
-const HIGH_RISK = new Set(["refund", "store-reset"])
+// Must mirror HIGH_RISK_ACTIONS in modules/rbac/permissions.ts. Miss one here and the UI offers
+// a button the server will refuse — e.g. `orders:manage` would appear to grant delete-order.
+const HIGH_RISK = new Set(["refund", "delete-order", "store-reset"])
 
 /**
  * Client-side mirror of the backend `hasPermission` (modules/rbac/permissions.ts).

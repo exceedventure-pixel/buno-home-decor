@@ -11,9 +11,6 @@ const VariantCost = model.define("variant_cost", {
   id: model.id().primaryKey(),
   variant_id: model.text().unique(),
   cost: model.bigNumber().default(0),
-  // Per-unit packaging preset. Each unit shipped draws this out of the packaging pool.
-  // Same as-is scale as `cost`; bigNumber for the same no-truncation reason.
-  packaging_cost: model.bigNumber().default(0),
   currency_code: model.text().nullable(),
 })
 

@@ -57,7 +57,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       courier_cost: filtered.reduce((s, r) => s + r.courier_cost, 0),
       delivery_margin: filtered.reduce((s, r) => s + r.delivery_margin, 0),
       cogs: filtered.reduce((s, r) => s + r.cogs, 0),
-      packaging: filtered.reduce((s, r) => s + r.packaging, 0),
       write_off: filtered.reduce((s, r) => s + r.write_off, 0),
       net_profit: filtered.reduce((s, r) => s + r.net_profit, 0),
       outstanding: filtered.reduce((s, r) => s + r.outstanding, 0),

@@ -178,5 +178,17 @@ export function resolvePermission(
     return { resource: "orders", action: "refund" }
   }
 
+  /**
+   * Erasing an order gets its own HIGH-RISK action, not the ordinary `delete`.
+   *
+   * Two traps this avoids: the route is a POST (the confirmation phrase has to travel in a body),
+   * so it would otherwise fall through to `orders:write`; and plain `orders:delete` is implied by
+   * `orders:manage`, which every Store Manager has. `delete-order` is high-risk, so it is only
+   * ever held by someone granted it explicitly.
+   */
+  if (resource === "orders" && /\/delete-order(\/|$)/i.test(path)) {
+    return { resource: "orders", action: "delete-order" }
+  }
+
   return { resource, action: actionForMethod(method) }
 }

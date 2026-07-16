@@ -89,11 +89,11 @@ export const ISSUE_STATUS_META: Record<IssueStatusKey, { label: string; color: C
 /** What each status change will actually DO — shown in the confirmation, so nobody is surprised. */
 export const TRANSITION_EFFECT: Partial<Record<OrderStatusKey, string>> = {
   dispatched:
-    "Creates the fulfilment: stock leaves the shelf, cost of goods is booked (FIFO) and the packaging is drawn.",
+    "Creates the fulfilment: stock leaves the shelf and cost of goods is booked (FIFO).",
   delivered: "Captures the outstanding payment — the cash the courier collected lands in the books.",
   returned: "Creates and receives a return: the goods go back on the shelf and their COGS reverses.",
   cancelled:
-    "If nothing shipped, releases the stock reservation. If it already went out, this is an RTO — the goods come back, but the courier fee and packaging are still real costs.",
+    "If nothing shipped, releases the stock reservation. If it already went out, this is an RTO — the goods come back, but the courier fee is still a real cost.",
   refunded: "Refunds the captured payment — money goes back to the customer.",
 }
 
@@ -112,7 +112,6 @@ export type OrderRow = {
   total: number
   cogs: number
   production_cost: number
-  packaging: number
   courier_cost: number
   write_off: number
   delivery_margin: number

@@ -27,7 +27,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const product_revenue = sum((o) => o.product_revenue)
   const delivery_charged = sum((o) => o.delivery_charged)
   const cogs = sum((o) => o.cogs)
-  const packaging = sum((o) => o.packaging)
   const courier_cost = sum((o) => o.courier_cost)
   const write_off = sum((o) => o.write_off)
 
@@ -51,8 +50,11 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
    */
   const overhead = exp.total - exp.courier_fee - exp.production_cost
 
-  const net_profit =
-    gross_profit + delivery_margin + other_income - packaging - write_off - overhead
+  // Packaging is NOT subtracted separately: it's a ledger expense now (bought = spent), so it is
+  // already inside `overhead`. Subtracting it here as well would charge for it twice.
+  const packaging = exp.packaging_purchase
+
+  const net_profit = gross_profit + delivery_margin + other_income - write_off - overhead
 
   const countBy = <K extends string>(f: (o: (typeof orders)[number]) => K) => {
     const m: Record<string, number> = {}

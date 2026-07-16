@@ -3,7 +3,6 @@ import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 import { computeFifoCosting } from "../insights/fifo-costing"
 import { ORDER_PROCESSING_MODULE } from "../../modules/orderProcessing"
-import { PRODUCT_COST_MODULE } from "../../modules/productCost"
 import {
   derivePaymentStatus,
   resolveOrderStatus,
@@ -55,7 +54,6 @@ export type OrderEconomics = {
   cogs: number
   /** For pre-order/custom: what production cost. (For ready-stock this is 0; COGS is FIFO.) */
   production_cost: number
-  packaging: number
   courier_cost: number
   /** Goods destroyed in transit — a real loss, never restocked. */
   write_off: number
@@ -103,16 +101,9 @@ export async function computeOrderEconomics(
 ): Promise<OrderEconomics[]> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const opSvc: any = container.resolve(ORDER_PROCESSING_MODULE)
-  const costSvc: any = container.resolve(PRODUCT_COST_MODULE)
 
   // FIFO gives us the exact cost of the goods each order actually drew.
   const fifo = await computeFifoCosting(container)
-
-  // Packaging is a flat per-variant preset drawn on every unit shipped.
-  const costRows = await costSvc.listVariantCosts({}, { take: 100000 })
-  const packagingPreset = new Map<string, number>(
-    costRows.map((c: any) => [c.variant_id, num(c.packaging_cost)])
-  )
 
   const workflows = await opSvc.listOrderWorkflows({}, { take: 100000 })
   const wfByOrder = new Map<string, any>(workflows.map((w: any) => [w.order_id, w]))
@@ -220,15 +211,12 @@ export async function computeOrderEconomics(
     // ── Goods: what physically moved ─────────────────────────────────────────
     let unitsShipped = 0
     let unitsReturned = 0
-    let packaging = 0
     let returnedValue = 0
     for (const it of o.items ?? []) {
       const fulfilled = num(it.detail?.fulfilled_quantity)
       const returned = num(it.detail?.return_received_quantity)
       unitsShipped += fulfilled
       unitsReturned += returned
-      // The box is spent the moment the parcel is packed — a return doesn't give it back.
-      packaging += (packagingPreset.get(it.variant_id) ?? 0) * fulfilled
       returnedValue += num(it.unit_price) * returned
     }
 
@@ -262,14 +250,48 @@ export async function computeOrderEconomics(
     })
 
     // ── The money ────────────────────────────────────────────────────────────
-    const productRevenue = Math.max(0, num(o.item_total) - returnedValue)
+
+    /** Cash we actually took and did NOT give back. The only money we really kept. */
+    const retained = Math.max(0, captured - refunded)
+
+    let productRevenue = Math.max(0, num(o.item_total) - returnedValue)
 
     /**
      * Delivery charged is the revenue side. Use the per-order override when set (the
      * "overcharge" — what you actually billed), otherwise Medusa's shipping_total.
      */
-    const deliveryCharged =
+    let deliveryCharged =
       wf?.delivery_charged != null ? num(wf.delivery_charged) : num(o.shipping_total)
+
+    /**
+     * A SALE THAT DIDN'T HAPPEN IS NOT REVENUE — and this is where it used to lie.
+     *
+     * Two cases, and both were being counted as if the customer had paid:
+     *
+     *   Cancelled before anything shipped — nothing moved, no cash, no parcel. It rolls back as
+     *   if the order was never placed: no revenue, no delivery. (It used to keep its full
+     *   item_total, which is why a cancelled order still inflated Sales Insights.)
+     *
+     *   RTO / returned — the goods came back, so there is no product sale. Delivery is only
+     *   revenue to the extent the customer ACTUALLY PAID for it: we recover the delivery out of
+     *   whatever they put down (an advance), and whatever the courier charged beyond that is a
+     *   real loss. With no advance we keep nothing and eat the courier fee — which is exactly
+     *   what happens on the shelf, and what the books previously showed as a PROFIT.
+     *
+     * Deriving this from retained cash also means "we'll collect the delivery from them later"
+     * needs no flag: the day that cash is recorded, the delivery revenue appears on its own.
+     */
+    const goodsDestroyed = issue === "damaged"
+
+    if (facts.canceled && unitsShipped === 0) {
+      productRevenue = 0
+      deliveryCharged = 0
+    } else if (facts.canceled || unitsReturned > 0 || goodsDestroyed) {
+      // Destroyed in transit is the same story as a return: the customer never got the goods, so
+      // there is no sale — only whatever cash they had already put down.
+      if (facts.canceled || goodsDestroyed) productRevenue = 0
+      deliveryCharged = Math.min(deliveryCharged, retained)
+    }
 
     const productionCost = num(wf?.production_cost)
 
@@ -281,12 +303,21 @@ export async function computeOrderEconomics(
     const cogs = isProduction ? productionCost : (fifo.cogs_by_ref.get(o.id) ?? 0)
     const courierCost = num(wf?.courier_fee)
 
-    // Damaged goods never came back, so their cost is a straight loss on top of everything else.
+    /**
+     * The value of goods destroyed in transit — REPORTED, not charged again.
+     *
+     * These units left the shelf on this order, so `cogs` has already counted them exactly once.
+     * Subtracting write_off on top charged the same physical units twice: a ৳1000 order whose
+     * ৳400 of goods were destroyed booked full revenue AND ৳800 of cost, and reported +৳200
+     * PROFIT on a parcel that lost ৳400. Revenue is zeroed above (nobody received anything), so
+     * `− cogs` alone is the loss, and this figure is here to show what it was worth.
+     */
     const writeOff = issue === "damaged" ? cogs : 0
 
     const deliveryMargin = deliveryCharged - courierCost
-    const netProfit =
-      productRevenue + deliveryCharged - cogs - packaging - courierCost - writeOff
+    // Packaging is deliberately absent: it's expensed when bought (a period cost in the Cash
+    // Book), not allocated per order.
+    const netProfit = productRevenue + deliveryCharged - cogs - courierCost
 
     const name =
       [o.shipping_address?.first_name, o.shipping_address?.last_name].filter(Boolean).join(" ") ||
@@ -312,7 +343,6 @@ export async function computeOrderEconomics(
 
       cogs,
       production_cost: productionCost,
-      packaging,
       courier_cost: courierCost,
       write_off: writeOff,
 

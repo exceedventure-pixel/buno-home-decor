@@ -238,7 +238,12 @@ const SalesInsightsPage = () => {
             {/* Where the money goes */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
               <Kpi label="Cost of goods" value={money(data.costs.cogs, cur)} accent="red" />
-              <Kpi label="Packaging" value={money(data.costs.packaging, cur)} accent="red" />
+              <Kpi
+                label="Packaging"
+                value={money(data.costs.packaging, cur)}
+                hint="bought in this period"
+                accent="red"
+              />
               <Kpi label="Courier" value={money(data.costs.courier, cur)} accent="red" />
               <Kpi
                 label="Damaged / written off"
