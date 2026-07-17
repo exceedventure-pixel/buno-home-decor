@@ -21,15 +21,37 @@ function readDeliveryCharge(payload: any): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined
 }
 
-// Steadfast status → NormalizedStatus mapping
+/**
+ * Steadfast `delivery_status` → our NormalizedStatus.
+ *
+ * Steadfast's public API (`status_by_cid`) returns only the parcel's SINGLE current status string —
+ * there is no event-timeline/history endpoint like the one in their merchant app, so we can't
+ * mirror that here. What we can do is recognise their full status vocabulary and bucket it safely.
+ *
+ * The load-bearing rule is money: only Steadfast's FINAL states drive terminal actions. `delivered`
+ * captures COD, `cancelled` runs the RTO/cancel, `returned` restocks. Their "…_approval_pending"
+ * states mean the parcel is still out but not finalised, so they map to `in_transit` — the order
+ * dispatches (stock leaves) but no cash is captured until the status is truly `delivered`.
+ */
 const STATUS_MAP: Record<string, NormalizedStatus> = {
+  // Awaiting pickup / on hold with the courier.
   pending: "pending",
   in_review: "pending",
-  partially_delivered: "in_transit",
+  hold: "pending",
+  // Out with the courier — moving, but not a final state.
   out_for_delivery: "in_transit",
+  partial_delivered: "in_transit",
+  partially_delivered: "in_transit",
+  delivered_approval_pending: "in_transit",
+  partial_delivered_approval_pending: "in_transit",
+  cancelled_approval_pending: "in_transit",
+  // Final states — these are the only ones that move cash or stock.
   delivered: "delivered",
   returned: "returned",
   cancelled: "cancelled",
+  // Explicitly unknown — recorded, no transition.
+  unknown: "unknown",
+  unknown_approval_pending: "unknown",
 }
 
 export const steadfastAdapter: CourierAdapter = {

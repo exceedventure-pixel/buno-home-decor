@@ -11,9 +11,10 @@ import {
   Prompt,
   Select,
   Text,
+  Tooltip,
   toast,
 } from "@medusajs/ui"
-import { ChevronDownMini, PencilSquare } from "@medusajs/icons"
+import { ChevronDownMini, InformationCircleSolid, PencilSquare } from "@medusajs/icons"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 
@@ -49,6 +50,17 @@ const COURIER_NAMES: Record<string, string> = {
 
 // Ship statuses are driven by the Shipment-method chooser, not the generic Next-step buttons.
 const SHIP_STATUSES: OrderStatusKey[] = ["courier_booked", "dispatched"]
+
+/** A small ⓘ that reveals explanatory text on hover — keeps the panel compact without losing it. */
+function InfoHint({ text }: { text: string }) {
+  return (
+    <Tooltip content={text}>
+      <span className="inline-flex text-ui-fg-muted">
+        <InformationCircleSolid />
+      </span>
+    </Tooltip>
+  )
+}
 // Once booked with a courier, these advance automatically (webhook + poll) — no manual button.
 const COURIER_AUTO_STATUSES: OrderStatusKey[] = ["dispatched", "delivered"]
 
@@ -294,11 +306,9 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
 
   return (
     <Container className="flex flex-col gap-y-4 px-6 py-6">
-      <div>
+      <div className="flex items-center gap-x-1.5">
         <Heading level="h2">Order Processing</Heading>
-        <Text size="small" className="text-ui-fg-subtle mt-1">
-          Moving the status here does the real work — it isn't a label.
-        </Text>
+        <InfoHint text="Moving the status here does the real work — it isn't a label." />
       </div>
 
       {/* Current state */}
@@ -320,12 +330,14 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
       </div>
 
       {o.outstanding > 0 && (
-        <Text size="xsmall" className="text-ui-fg-muted">
-          {money(o.captured, cur)} collected · <b>{money(o.outstanding, cur)} still owed</b>
-          {o.payment_status === "cod" || o.payment_status === "advance_paid"
-            ? " — collected when you mark it Delivered."
-            : ""}
-        </Text>
+        <div className="flex items-center gap-x-1.5">
+          <Text size="xsmall" className="text-ui-fg-muted">
+            {money(o.captured, cur)} collected · <b>{money(o.outstanding, cur)} still owed</b>
+          </Text>
+          {(o.payment_status === "cod" || o.payment_status === "advance_paid") && (
+            <InfoHint text="Collected when you mark it Delivered." />
+          )}
+        </div>
       )}
 
       {/* Ship this order — the clear fork: courier OR manual. Only while the order is ready to ship
@@ -419,10 +431,12 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
 
           {showAutoNote && (
             <div className="flex flex-col gap-y-2 rounded-lg bg-ui-bg-subtle p-2.5">
-              <Text size="xsmall" className="text-ui-fg-subtle">
-                Auto-updates from {bookedCourierName} — it dispatches on pickup and completes on
-                delivery. No action needed.
-              </Text>
+              <div className="flex items-center gap-x-1.5">
+                <Text size="xsmall" className="text-ui-fg-subtle">
+                  Auto-updates from {bookedCourierName}
+                </Text>
+                <InfoHint text="It dispatches on pickup and completes on delivery. No action needed." />
+              </div>
               {autoActions.length > 0 &&
                 (manualOverride ? (
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -545,7 +559,10 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
 
       {/* Issue */}
       <div className="flex flex-col gap-y-2 border-t border-ui-border-base pt-4">
-        <Label size="small">Issue</Label>
+        <div className="flex items-center gap-x-1.5">
+          <Label size="small">Issue</Label>
+          <InfoHint text="Damaged writes the goods off at cost — they are not put back on the shelf, because they no longer exist." />
+        </div>
         <Select
           value={o.issue_status}
           onValueChange={(v) => setIssue.mutate(v as IssueStatusKey)}
@@ -561,19 +578,10 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
             ))}
           </Select.Content>
         </Select>
-        <Text size="xsmall" className="text-ui-fg-muted">
-          <b>Damaged</b> writes the goods off at cost — they are not put back on the shelf, because
-          they no longer exist.
-        </Text>
       </div>
 
-      {/* This order's P&L */}
-      <div className="flex flex-col gap-y-1 rounded-lg bg-ui-bg-subtle p-3">
-        <Text size="xsmall" className="text-ui-fg-muted">
-          Revenue {money(o.product_revenue, cur)} + delivery {money(o.delivery_charged, cur)} −
-          goods {money(o.cogs, cur)} − courier {money(o.courier_cost, cur)}
-          {o.write_off > 0 ? ` − written off ${money(o.write_off, cur)}` : ""}
-        </Text>
+      {/* This order's P&L — the headline number; the breakdown sits behind the ⓘ. */}
+      <div className="flex items-center justify-between gap-x-2 rounded-lg bg-ui-bg-subtle p-3">
         <Text
           size="small"
           weight="plus"
@@ -581,6 +589,9 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
         >
           This order {o.net_profit >= 0 ? "made" : "lost"} {money(Math.abs(o.net_profit), cur)}
         </Text>
+        <InfoHint
+          text={`Revenue ${money(o.product_revenue, cur)} + delivery ${money(o.delivery_charged, cur)} − goods ${money(o.cogs, cur)} − courier ${money(o.courier_cost, cur)}${o.write_off > 0 ? ` − written off ${money(o.write_off, cur)}` : ""}`}
+        />
       </div>
 
       {/* Confirm — always say what will actually happen */}

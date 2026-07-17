@@ -1,6 +1,11 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { ContainerRegistrationKeys, MedusaError, Modules } from "@medusajs/framework/utils"
 
+import {
+  ensureLevel,
+  loadVariantStockAt,
+  requireSellableLocation,
+} from "../../../../../lib/inventory/stock-location"
 import { computeOrderEconomics } from "../../../../../lib/orders/order-economics"
 import { ACCOUNTING_MODULE } from "../../../../../modules/accounting"
 import { ORDER_PROCESSING_MODULE } from "../../../../../modules/orderProcessing"
@@ -20,58 +25,96 @@ import { ORDER_PROCESSING_MODULE } from "../../../../../modules/orderProcessing"
  * and the Accounting dashboard — there are no totals to unwind by hand. The row is still
  * physically present if it ever has to be recovered.
  *
- * Three things do NOT clean themselves up, so they're handled here:
+ * Four things do NOT clean themselves up, so they're handled here:
  *   1. Reservations — they live in the inventory module with no cascade, so a deleted order
  *      otherwise leaves its units stuck as "reserved" forever (store-reset hit the same trap).
- *   2. Ledger rows the order owns (courier fee, production cost) — real Cash Book entries that
+ *   2. Shipped stock — soft-deleting the order auto-corrects the FIFO cost replay (the order
+ *      vanishes from the derived COGS), but Medusa's physical `stocked_quantity` was decremented
+ *      at fulfilment and is NOT restored. So when the caller says the goods are still in hand
+ *      (`restock: true`), we bump the shelf back up by the units currently out (fulfilled, not
+ *      yet returned). When the goods are genuinely gone (delivered to the customer, lost), the
+ *      caller says so and we leave the shelf alone.
+ *   3. Ledger rows the order owns (courier fee, production cost) — real Cash Book entries that
  *      would otherwise be an expense for an order that no longer exists.
- *   3. Our order_workflow + status-event rows.
+ *   4. Our order_workflow + status-event rows.
  *
- * What it does NOT do is undo reality: stock that already shipped stays gone and captured cash
- * stays captured. This is for orders that should never have existed — not a way to reverse a real
- * shipment. The pre-check spells that out before anyone confirms.
+ * What it still does NOT do is refund the customer: captured cash simply stops being counted.
+ * This is for orders that should never have existed — the pre-check spells out the cash and the
+ * courier consignment so the human can settle those by hand.
  */
 
 const CONFIRM_PHRASE = "delete order"
 
+type RestockLine = { variant_id: string; title: string; qty: number }
+
+/**
+ * What deleting this order would touch. The load-bearing figure is `restockLines`: the units
+ * currently OFF the shelf because of this order — fulfilled quantity of each variant-backed line,
+ * unless the order already has a return (which restocked them). pre-order/custom lines carry no
+ * variant, so Medusa never moved inventory for them and they never appear here.
+ */
 async function assess(scope: any, orderId: string) {
   const opSvc: any = scope.resolve(ORDER_PROCESSING_MODULE)
+  const query = scope.resolve(ContainerRegistrationKeys.QUERY)
   const [econ] = await computeOrderEconomics(scope, { order_id: orderId })
   const [wf] = await opSvc.listOrderWorkflows({ order_id: orderId })
 
-  const warnings: string[] = []
-  if (econ) {
-    if (econ.units_shipped > 0) {
-      warnings.push(
-        `${econ.units_shipped} unit(s) already shipped — deleting will NOT put that stock back.`
-      )
-    }
-    if (econ.captured > 0) {
-      warnings.push(
-        `Cash of ${econ.captured} was already captured — deleting removes it from your books without refunding the customer.`
-      )
-    }
-    if (wf?.consignment_id) {
-      warnings.push(
-        `Booked with ${wf.courier_id ?? "a courier"} (consignment ${wf.consignment_id}) — cancel that parcel in their portal too.`
-      )
+  const { data } = await query.graph({
+    entity: "order",
+    fields: [
+      "id",
+      "returns.id",
+      "items.variant_id",
+      "items.product_title",
+      "items.title",
+      "items.detail.fulfilled_quantity",
+    ],
+    filters: { id: orderId },
+  })
+  const o = data?.[0] as any
+
+  // A return (RTO or manual) has already put its units back — nothing left to restock.
+  const hasReturn = ((o?.returns ?? []) as any[]).length > 0
+
+  // Aggregate the still-out quantity per variant (two lines of the same variant collapse to one
+  // level write).
+  const byVariant = new Map<string, RestockLine>()
+  if (!hasReturn) {
+    for (const it of (o?.items ?? []) as any[]) {
+      const variantId = it.variant_id
+      const qty = Number(it.detail?.fulfilled_quantity) || 0
+      if (!variantId || qty <= 0) continue
+      const row = byVariant.get(variantId)
+      if (row) row.qty += qty
+      else byVariant.set(variantId, { variant_id: variantId, title: it.product_title || it.title || "Item", qty })
     }
   }
+  const restockLines = [...byVariant.values()]
+  const unitsOut = restockLines.reduce((s, r) => s + r.qty, 0)
 
-  return { econ, wf, warnings }
+  return { econ, wf, restockLines, unitsOut }
 }
 
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
-  const { econ, warnings } = await assess(req.scope, req.params.id)
+  const { econ, wf, restockLines, unitsOut } = await assess(req.scope, req.params.id)
   if (!econ) {
     throw new MedusaError(MedusaError.Types.NOT_FOUND, `Order "${req.params.id}" not found.`)
   }
   res.json({
     order_id: econ.order_id,
     display_id: econ.display_id,
-    units_shipped: econ.units_shipped,
+    order_status: econ.order_status,
+    // Units currently off the shelf because of this order — the restock choice only appears when
+    // this is > 0.
+    units_out: unitsOut,
+    restock_lines: restockLines.map((r) => ({ title: r.title, qty: r.qty })),
+    // Smart default: goods that were DELIVERED are with the customer (don't restock); anything not
+    // yet delivered was probably a mistake with the goods still in hand (restock).
+    default_restock: econ.order_status !== "delivered",
     captured: econ.captured,
-    warnings,
+    courier: wf?.consignment_id
+      ? { courier_id: wf.courier_id ?? null, consignment_id: wf.consignment_id }
+      : null,
     confirm_phrase: CONFIRM_PHRASE,
   })
 }
@@ -79,7 +122,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const orderId = req.params.id
   const logger = req.scope.resolve("logger") as any
-  const body = (req.body ?? {}) as { confirm?: string }
+  const body = (req.body ?? {}) as { confirm?: string; restock?: boolean }
 
   if ((body.confirm ?? "").trim().toLowerCase() !== CONFIRM_PHRASE) {
     throw new MedusaError(
@@ -88,7 +131,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     )
   }
 
-  const { econ, wf } = await assess(req.scope, orderId)
+  const { econ, wf, restockLines, unitsOut } = await assess(req.scope, orderId)
   if (!econ) {
     throw new MedusaError(MedusaError.Types.NOT_FOUND, `Order "${orderId}" not found.`)
   }
@@ -97,6 +140,38 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const inventory: any = req.scope.resolve(Modules.INVENTORY)
   const acct: any = req.scope.resolve(ACCOUNTING_MODULE)
   const opSvc: any = req.scope.resolve(ORDER_PROCESSING_MODULE)
+
+  // 0. Put shipped stock back on the shelf, IF asked and there is any out. This runs FIRST and,
+  //    unlike the cleanup below, is NOT best-effort: if the caller wanted the goods restocked and
+  //    we can't, we abort rather than delete the order with the shelf still short. A single
+  //    updateInventoryLevels call means there's no half-restocked state to reconcile on retry.
+  let unitsRestocked = 0
+  if (body.restock && unitsOut > 0) {
+    try {
+      const location = await requireSellableLocation(req.scope)
+      const updates: {
+        inventory_item_id: string
+        location_id: string
+        stocked_quantity: number
+      }[] = []
+      for (const line of restockLines) {
+        const target = await loadVariantStockAt(req.scope, line.variant_id, location)
+        await ensureLevel(req.scope, target)
+        updates.push({
+          inventory_item_id: target.itemId,
+          location_id: target.locationId,
+          stocked_quantity: target.onShelf + line.qty,
+        })
+        unitsRestocked += line.qty
+      }
+      if (updates.length) await inventory.updateInventoryLevels(updates)
+    } catch (err: any) {
+      throw new MedusaError(
+        MedusaError.Types.UNEXPECTED_STATE,
+        `Could not put the stock back (${err.message}). Nothing was deleted — try again, or delete without restocking.`
+      )
+    }
+  }
 
   // 1. Release this order's reservations, or its units stay reserved against a ghost.
   //    Line items come from query.graph (the same way reserve.ts reads them) rather than a
@@ -149,14 +224,15 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   logger?.info(
     `[orders:delete] Order ${orderId} (#${econ.display_id}) deleted by ` +
-      `${req.auth_context?.actor_id ?? "unknown"} — ${reservationsReleased} reservation(s) released, ` +
-      `${ledgerRemoved} ledger row(s) removed`
+      `${req.auth_context?.actor_id ?? "unknown"} — ${unitsRestocked} unit(s) restocked, ` +
+      `${reservationsReleased} reservation(s) released, ${ledgerRemoved} ledger row(s) removed`
   )
 
   res.json({
     success: true,
     order_id: orderId,
     display_id: econ.display_id,
+    units_restocked: unitsRestocked,
     reservations_released: reservationsReleased,
     ledger_rows_removed: ledgerRemoved,
   })
