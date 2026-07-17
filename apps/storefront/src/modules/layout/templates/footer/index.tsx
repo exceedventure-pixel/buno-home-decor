@@ -1,4 +1,5 @@
 import { listCategories } from "@lib/data/categories"
+import { getStoreSettings } from "@lib/data/store-settings"
 import brand from "brand.config"
 import { Text } from "@modules/common/components/ui"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
@@ -98,14 +99,27 @@ function LinkColumn({
 // ─── Footer ───────────────────────────────────────────────────────────────────
 
 export default async function Footer() {
-  const productCategories = await listCategories()
+  const [productCategories, settings] = await Promise.all([
+    listCategories(),
+    getStoreSettings(),
+  ])
   const topLevelCategories = productCategories.filter((c) => !c.parent_category)
 
+  // Admin-editable values win; brand.config is the fallback when a field is left blank.
+  const contact = {
+    address: settings.store_address || brand.contact.address,
+    phone: settings.order_phone || brand.contact.phone,
+    email: settings.store_email || brand.contact.email,
+  }
+  const social = {
+    facebook: settings.social_links?.facebook || brand.social.facebook,
+    instagram: settings.social_links?.instagram || brand.social.instagram,
+    tiktok: settings.social_links?.tiktok || brand.social.tiktok,
+    youtube: settings.social_links?.youtube || brand.social.youtube,
+  }
+
   const hasSocial =
-    brand.social.facebook ||
-    brand.social.instagram ||
-    brand.social.tiktok ||
-    brand.social.youtube
+    social.facebook || social.instagram || social.tiktok || social.youtube
 
   return (
     <footer
@@ -133,30 +147,30 @@ export default async function Footer() {
             <address className="not-italic flex flex-col gap-3 text-sm text-ui-fg-subtle">
               <div className="flex items-start gap-2.5">
                 <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-ui-fg-muted" />
-                <span>{brand.contact.address}</span>
+                <span>{contact.address}</span>
               </div>
               <a
-                href={`tel:${brand.contact.phone}`}
+                href={`tel:${contact.phone}`}
                 className="flex items-center gap-2.5 hover:text-[var(--brand-primary)] transition-colors"
               >
                 <Phone className="w-4 h-4 shrink-0 text-ui-fg-muted" />
-                <span>{brand.contact.phone}</span>
+                <span>{contact.phone}</span>
               </a>
               <a
-                href={`mailto:${brand.contact.email}`}
+                href={`mailto:${contact.email}`}
                 className="flex items-center gap-2.5 hover:text-[var(--brand-primary)] transition-colors"
               >
                 <Mail className="w-4 h-4 shrink-0 text-ui-fg-muted" />
-                <span>{brand.contact.email}</span>
+                <span>{contact.email}</span>
               </a>
             </address>
 
             {/* Social icons — only rendered when URLs are set */}
             {hasSocial && (
               <div className="flex gap-3" aria-label="Social media links">
-                {brand.social.facebook && (
+                {social.facebook && (
                   <a
-                    href={brand.social.facebook}
+                    href={social.facebook}
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label="Follow us on Facebook"
@@ -165,9 +179,9 @@ export default async function Footer() {
                     <Facebook className="w-4 h-4" />
                   </a>
                 )}
-                {brand.social.instagram && (
+                {social.instagram && (
                   <a
-                    href={brand.social.instagram}
+                    href={social.instagram}
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label="Follow us on Instagram"
@@ -176,9 +190,9 @@ export default async function Footer() {
                     <InstagramIcon className="w-4 h-4" />
                   </a>
                 )}
-                {brand.social.tiktok && (
+                {social.tiktok && (
                   <a
-                    href={brand.social.tiktok}
+                    href={social.tiktok}
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label="Follow us on TikTok"
@@ -187,9 +201,9 @@ export default async function Footer() {
                     <TikTokIcon className="w-4 h-4" />
                   </a>
                 )}
-                {brand.social.youtube && (
+                {social.youtube && (
                   <a
-                    href={brand.social.youtube}
+                    href={social.youtube}
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label="Follow us on YouTube"

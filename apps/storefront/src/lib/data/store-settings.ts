@@ -1,9 +1,28 @@
 const BACKEND = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL ?? "http://localhost:9000"
 const PK = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? ""
 
+export type StoreSocialLinks = {
+  facebook?: string | null
+  instagram?: string | null
+  tiktok?: string | null
+  youtube?: string | null
+}
+
 export type StoreContactSettings = {
   whatsapp_number: string | null
   order_phone: string | null
+  // Footer contact + socials, editable in admin. Null → fall back to brand.config.
+  store_email: string | null
+  store_address: string | null
+  social_links: StoreSocialLinks | null
+}
+
+const EMPTY: StoreContactSettings = {
+  whatsapp_number: null,
+  order_phone: null,
+  store_email: null,
+  store_address: null,
+  social_links: null,
 }
 
 export async function getStoreSettings(): Promise<StoreContactSettings> {
@@ -12,10 +31,10 @@ export async function getStoreSettings(): Promise<StoreContactSettings> {
       headers: { "x-publishable-api-key": PK },
       next: { revalidate: 0 },
     })
-    if (!res.ok) return { whatsapp_number: null, order_phone: null }
-    return res.json()
+    if (!res.ok) return EMPTY
+    return { ...EMPTY, ...(await res.json()) }
   } catch {
-    return { whatsapp_number: null, order_phone: null }
+    return EMPTY
   }
 }
 

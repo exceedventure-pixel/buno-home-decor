@@ -6,8 +6,14 @@ const StoreSetting = model.define("store_setting", {
   order_phone: model.text().nullable(),
   // Shown on printed invoices & packing slips (the store name, tagline and logo are fixed brand
   // assets baked into the print template; these are the parts that change per store).
+  // invoice_phone is kept SEPARATE from order_phone (the storefront "Call for Order" button) so
+  // the number printed on documents can differ from the one customers use to place orders.
+  invoice_phone: model.text().nullable(),
   store_email: model.text().nullable(),
   store_address: model.text().nullable(),
+  // Social profile URLs shown in the storefront footer. Shape: { facebook, instagram, tiktok,
+  // youtube } — any left blank is hidden. Matches brand.config.social, which is the fallback.
+  social_links: model.json().nullable(),
   product_card_style: model.text().nullable(),
   product_card_fields: model.json().nullable(),
   card_button_layout: model.text().nullable(),

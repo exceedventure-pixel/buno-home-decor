@@ -82,11 +82,15 @@ function CategorySection({
 
 // ── Contact buttons (storefront) ───────────────────────────────────────────────
 
+type Social = { facebook: string; instagram: string; tiktok: string; youtube: string }
+
 function ContactSettings() {
   const [whatsapp, setWhatsapp] = useState("")
   const [phone, setPhone] = useState("")
+  const [invoicePhone, setInvoicePhone] = useState("")
   const [email, setEmail] = useState("")
   const [address, setAddress] = useState("")
+  const [social, setSocial] = useState<Social>({ facebook: "", instagram: "", tiktok: "", youtube: "" })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -95,19 +99,31 @@ function ContactSettings() {
       setting: {
         whatsapp_number: string | null
         order_phone: string | null
+        invoice_phone: string | null
         store_email: string | null
         store_address: string | null
+        social_links: Partial<Social> | null
       }
     }>("/store-settings")
       .then(({ setting }) => {
         setWhatsapp(setting?.whatsapp_number ?? "")
         setPhone(setting?.order_phone ?? "")
+        setInvoicePhone(setting?.invoice_phone ?? "")
         setEmail(setting?.store_email ?? "")
         setAddress(setting?.store_address ?? "")
+        const s = setting?.social_links ?? {}
+        setSocial({
+          facebook: s.facebook ?? "",
+          instagram: s.instagram ?? "",
+          tiktok: s.tiktok ?? "",
+          youtube: s.youtube ?? "",
+        })
       })
       .catch(() => toast.error("Failed to load settings"))
       .finally(() => setLoading(false))
   }, [])
+
+  const setSoc = (k: keyof Social, v: string) => setSocial((p) => ({ ...p, [k]: v }))
 
   const handleSave = async () => {
     setSaving(true)
@@ -117,8 +133,15 @@ function ContactSettings() {
         body: JSON.stringify({
           whatsapp_number: whatsapp.trim() || null,
           order_phone: phone.trim() || null,
+          invoice_phone: invoicePhone.trim() || null,
           store_email: email.trim() || null,
           store_address: address.trim() || null,
+          social_links: {
+            facebook: social.facebook.trim(),
+            instagram: social.instagram.trim(),
+            tiktok: social.tiktok.trim(),
+            youtube: social.youtube.trim(),
+          },
         }),
       })
       toast.success("Settings saved")
@@ -129,38 +152,65 @@ function ContactSettings() {
     }
   }
 
+  const field = (label: string, value: string, onChange: (v: string) => void, placeholder: string, hint?: string) => (
+    <div className="flex flex-col gap-y-1">
+      <Label>{label}</Label>
+      {hint && <Text size="xsmall" className="text-ui-fg-muted">{hint}</Text>}
+      <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={loading} />
+    </div>
+  )
+
   return (
     <Container className="px-6 py-6 flex flex-col gap-y-6">
+      {/* Storefront buttons — how customers reach you before ordering. */}
       <div className="flex flex-col gap-y-4">
-        <div className="flex flex-col gap-y-1">
-          <Label>WhatsApp Number</Label>
+        <div>
+          <Text size="small" weight="plus">Storefront buttons</Text>
           <Text size="xsmall" className="text-ui-fg-muted">
-            Include country code, e.g. +8801712345678. Leave blank to hide the WhatsApp button.
+            The WhatsApp &amp; call buttons shown to customers on the storefront.
           </Text>
-          <Input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="+8801712345678" disabled={loading} />
         </div>
-        <div className="flex flex-col gap-y-1">
-          <Label>Order Phone Number</Label>
-          <Text size="xsmall" className="text-ui-fg-muted">
-            Phone for the "Call For Order" button and printed invoices. Leave blank to hide.
-          </Text>
-          <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+8801712345678" disabled={loading} />
-        </div>
-        <div className="flex flex-col gap-y-1">
-          <Label>Store Email</Label>
-          <Text size="xsmall" className="text-ui-fg-muted">
-            Shown on printed invoices &amp; packing slips.
-          </Text>
-          <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="hello@yourstore.com" disabled={loading} />
-        </div>
-        <div className="flex flex-col gap-y-1">
-          <Label>Store Address</Label>
-          <Text size="xsmall" className="text-ui-fg-muted">
-            Your return / pickup address, printed on invoices &amp; packing slips.
-          </Text>
-          <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Banktown, Savar, Dhaka 1340, Bangladesh" disabled={loading} />
-        </div>
+        {field("WhatsApp Number", whatsapp, setWhatsapp, "+8801712345678", "Include country code. Leave blank to hide the WhatsApp button.")}
+        {field("Order Phone Number", phone, setPhone, "+8801712345678", 'For the "Call For Order" button and the storefront footer. Leave blank to hide.')}
       </div>
+
+      {/* Address & email — shown on the storefront footer AND on printed invoices. */}
+      <div className="flex flex-col gap-y-4 border-t border-ui-border-base pt-6">
+        <div>
+          <Text size="small" weight="plus">Address &amp; email</Text>
+          <Text size="xsmall" className="text-ui-fg-muted">
+            Shown on the storefront footer and printed on invoices &amp; packing slips.
+          </Text>
+        </div>
+        {field("Store Address", address, setAddress, "Banktown, Savar, Dhaka 1340, Bangladesh")}
+        {field("Store Email", email, setEmail, "hello@yourstore.com")}
+      </div>
+
+      {/* Social media — storefront footer icons. */}
+      <div className="flex flex-col gap-y-4 border-t border-ui-border-base pt-6">
+        <div>
+          <Text size="small" weight="plus">Social media</Text>
+          <Text size="xsmall" className="text-ui-fg-muted">
+            Full profile URLs for the storefront footer. Leave a field blank to hide its icon.
+          </Text>
+        </div>
+        {field("Facebook", social.facebook, (v) => setSoc("facebook", v), "https://facebook.com/yourstore")}
+        {field("Instagram", social.instagram, (v) => setSoc("instagram", v), "https://instagram.com/yourstore")}
+        {field("TikTok", social.tiktok, (v) => setSoc("tiktok", v), "https://tiktok.com/@yourstore")}
+        {field("YouTube", social.youtube, (v) => setSoc("youtube", v), "https://youtube.com/@yourstore")}
+      </div>
+
+      {/* Invoice — the one detail that differs from the storefront. */}
+      <div className="flex flex-col gap-y-4 border-t border-ui-border-base pt-6">
+        <div>
+          <Text size="small" weight="plus">Invoice</Text>
+          <Text size="xsmall" className="text-ui-fg-muted">
+            Printed on invoices &amp; packing slips.
+          </Text>
+        </div>
+        {field("Invoice Phone", invoicePhone, setInvoicePhone, "+8801xxxxxxxxx", "The number printed on invoices. Leave blank to fall back to the order phone above.")}
+      </div>
+
       <div className="flex justify-end">
         <Button onClick={handleSave} isLoading={saving} disabled={loading || saving}>
           Save Contact &amp; Invoice Details
