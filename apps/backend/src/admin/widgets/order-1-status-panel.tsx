@@ -5,6 +5,7 @@ import {
   Button,
   Container,
   Heading,
+  IconButton,
   Input,
   Label,
   Prompt,
@@ -12,6 +13,7 @@ import {
   Text,
   toast,
 } from "@medusajs/ui"
+import { ChevronDownMini, PencilSquare } from "@medusajs/icons"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 
@@ -47,6 +49,88 @@ const COURIER_NAMES: Record<string, string> = {
 
 // Ship statuses are driven by the Shipment-method chooser, not the generic Next-step buttons.
 const SHIP_STATUSES: OrderStatusKey[] = ["courier_booked", "dispatched"]
+// Once booked with a courier, these advance automatically (webhook + poll) — no manual button.
+const COURIER_AUTO_STATUSES: OrderStatusKey[] = ["dispatched", "delivered"]
+
+/**
+ * One editable charge, guarded by a two-step reveal. The amount shows read-only with a pencil;
+ * only after clicking Edit does the input appear — so a stray click can't change a charge that's
+ * usually set for us (the courier fee especially). Owns its own draft; Save calls `onSave`.
+ */
+function ChargeRow({
+  label,
+  value,
+  cur,
+  help,
+  onSave,
+}: {
+  label: string
+  value: number
+  cur: string
+  help?: string
+  onSave: (n: number) => Promise<unknown>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(String(value ?? 0))
+  const [saving, setSaving] = useState(false)
+
+  const start = () => {
+    setDraft(String(value ?? 0))
+    setEditing(true)
+  }
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await onSave(Number(draft) || 0)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <Text size="small" className="text-ui-fg-subtle">
+          {label}
+        </Text>
+        {!editing && (
+          <div className="flex items-center gap-x-2">
+            <Text size="small" weight="plus">{money(value, cur)}</Text>
+            <IconButton size="small" variant="transparent" onClick={start}>
+              <PencilSquare />
+            </IconButton>
+          </div>
+        )}
+      </div>
+      {editing && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            type="number"
+            min="0"
+            step="1"
+            className="w-28"
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <Button size="small" onClick={save} isLoading={saving}>
+            Save
+          </Button>
+          <Button size="small" variant="transparent" disabled={saving} onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+        </div>
+      )}
+      {help && (
+        <Text size="xsmall" className="text-ui-fg-muted">
+          {help}
+        </Text>
+      )}
+    </div>
+  )
+}
 
 /**
  * The control panel. Changing a status here PERFORMS the action — it doesn't just label it —
@@ -81,19 +165,13 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
     couriersData?.couriers?.find((c) => c.is_active && c.configured) ?? null
 
   const [pending, setPending] = useState<OrderStatusKey | null>(null)
-  const [fee, setFee] = useState("")
-  const [deliveryCharged, setDeliveryCharged] = useState("")
-  const [prodCost, setProdCost] = useState("")
   const [codInput, setCodInput] = useState("")
+  // Reveal the normally-hidden manual dispatch/deliver buttons for a courier order, and the
+  // collapsed charge editors — both closed by default so the panel stays compact.
+  const [manualOverride, setManualOverride] = useState(false)
+  const [chargesOpen, setChargesOpen] = useState(false)
 
   const o = data?.order
-
-  useEffect(() => {
-    if (!o) return
-    setFee(String(o.courier_cost ?? 0))
-    setDeliveryCharged(String(o.delivery_charged ?? 0))
-    setProdCost(String(o.production_cost ?? 0))
-  }, [o?.courier_cost, o?.delivery_charged, o?.production_cost]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // When booking a courier, default the COD to what's still owed (advance already deducted).
   useEffect(() => {
@@ -144,8 +222,9 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
     onError: (e: Error) => toast.error(e.message),
   })
 
+  // These take the value from the ChargeRow's own draft (mutateAsync(n)) rather than panel state.
   const saveFee = useMutation({
-    mutationFn: () => opApi.update(orderId, { courier_fee: Number(fee) || 0 }),
+    mutationFn: (v: number) => opApi.update(orderId, { courier_fee: v }),
     onSuccess: () => {
       toast.success("Courier fee saved and booked to the Cash Book")
       refresh()
@@ -154,7 +233,7 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   })
 
   const saveDelivery = useMutation({
-    mutationFn: () => opApi.update(orderId, { delivery_charged: Number(deliveryCharged) || 0 }),
+    mutationFn: (v: number) => opApi.update(orderId, { delivery_charged: v }),
     onSuccess: () => {
       toast.success("Delivery charge updated — revenue recalculated")
       refresh()
@@ -163,7 +242,7 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   })
 
   const saveProdCost = useMutation({
-    mutationFn: () => opApi.update(orderId, { production_cost: Number(prodCost) || 0 }),
+    mutationFn: (v: number) => opApi.update(orderId, { production_cost: v }),
     onSuccess: () => {
       toast.success("Production cost updated — this order's COGS recalculated")
       refresh()
@@ -188,13 +267,29 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   // to ship and not already booked. When it's up, the generic Next-step buttons hide the ship
   // statuses so there's exactly one place to make that call.
   const shipChooser = !o.consignment_id && next.includes("courier_booked")
-  const forwardNext = next.filter((s) => !isExceptionStatus(s))
-  const nextActions = (shipChooser ? forwardNext.filter((s) => !SHIP_STATUSES.includes(s)) : forwardNext)
-    .slice()
-    .sort((a, b) => pipeline.indexOf(a) - pipeline.indexOf(b))
 
-  const feeNum = Number(fee) || 0
-  const deliveryNum = Number(deliveryCharged) || 0
+  // A courier order dispatches + delivers itself (webhook/poll), so those steps aren't manual
+  // buttons — the courier drives them. They stay reachable only behind "Update manually".
+  const isCourierOrder = !!o.consignment_id
+  const bookedCourierName = COURIER_NAMES[o.courier_id ?? ""] ?? "the courier"
+  const sortByPipeline = (a: OrderStatusKey, b: OrderStatusKey) =>
+    pipeline.indexOf(a) - pipeline.indexOf(b)
+
+  const forwardNext = next.filter((s) => !isExceptionStatus(s))
+  const hidden: OrderStatusKey[] = [
+    ...(shipChooser ? SHIP_STATUSES : []),
+    ...(isCourierOrder ? COURIER_AUTO_STATUSES : []),
+  ]
+  const nextActions = forwardNext.filter((s) => !hidden.includes(s)).slice().sort(sortByPipeline)
+  // Forward steps the courier normally drives — surfaced only when staff choose to override.
+  const autoActions = isCourierOrder
+    ? forwardNext.filter((s) => COURIER_AUTO_STATUSES.includes(s)).slice().sort(sortByPipeline)
+    : []
+  const showAutoNote =
+    isCourierOrder && (o.order_status === "courier_booked" || o.order_status === "dispatched")
+
+  const feeNum = o.courier_cost || 0
+  const deliveryNum = o.delivery_charged || 0
   const margin = deliveryNum - feeNum
 
   return (
@@ -308,26 +403,74 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
           </div>
         )}
 
-        <Timeline pipeline={pipeline} current={o.order_status} />
+        <Timeline
+          pipeline={pipeline}
+          current={o.order_status}
+          bookedLabel={isCourierOrder ? `Booked with ${bookedCourierName}` : undefined}
+        />
       </div>
 
       {/* Next step — the forward action(s), labeled as what they DO. Ship statuses are handled by
-          the chooser above, so they don't appear here while it's shown. */}
-      {nextActions.length > 0 && (
+          the chooser above; a courier order's dispatch/deliver are automatic, so those show as a
+          note with a hidden manual override rather than buttons. */}
+      {(nextActions.length > 0 || showAutoNote) && (
         <div className="flex flex-col gap-y-2">
           <Label size="small">Next step</Label>
-          <div className="flex flex-wrap gap-1.5">
-            {nextActions.map((s, i) => (
-              <Button
-                key={s}
-                size="small"
-                variant={i === 0 ? "primary" : "secondary"}
-                onClick={() => setPending(s)}
-              >
-                {NEXT_ACTION_LABEL[s]}
-              </Button>
-            ))}
-          </div>
+
+          {showAutoNote && (
+            <div className="flex flex-col gap-y-2 rounded-lg bg-ui-bg-subtle p-2.5">
+              <Text size="xsmall" className="text-ui-fg-subtle">
+                Auto-updates from {bookedCourierName} — it dispatches on pickup and completes on
+                delivery. No action needed.
+              </Text>
+              {autoActions.length > 0 &&
+                (manualOverride ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {autoActions.map((s) => (
+                      <Button
+                        key={s}
+                        size="small"
+                        variant="secondary"
+                        onClick={() => setPending(s)}
+                      >
+                        {NEXT_ACTION_LABEL[s]}
+                      </Button>
+                    ))}
+                    <Button
+                      size="small"
+                      variant="transparent"
+                      onClick={() => setManualOverride(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="small"
+                    variant="transparent"
+                    className="self-start text-ui-fg-muted"
+                    onClick={() => setManualOverride(true)}
+                  >
+                    Update manually
+                  </Button>
+                ))}
+            </div>
+          )}
+
+          {nextActions.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {nextActions.map((s, i) => (
+                <Button
+                  key={s}
+                  size="small"
+                  variant={i === 0 ? "primary" : "secondary"}
+                  onClick={() => setPending(s)}
+                >
+                  {NEXT_ACTION_LABEL[s]}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -350,82 +493,55 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
         </div>
       )}
 
-      {/* Courier fee → delivery margin */}
-      <div className="flex flex-col gap-y-2 border-t border-ui-border-base pt-4">
-        <Label size="small">Courier fee (what they charge us)</Label>
-        <Text size="xsmall" className="text-ui-fg-muted -mt-1">
-          Captured automatically from the courier when it reports one; otherwise type it here.
-        </Text>
-        <div className="flex flex-wrap items-end gap-2">
-          <Input
-            type="number"
-            min="0"
-            step="1"
-            className="w-24"
-            value={fee}
-            onChange={(e) => setFee(e.target.value)}
-          />
-          <Button size="small" onClick={() => saveFee.mutate()} isLoading={saveFee.isPending}>
-            Save
-          </Button>
-        </div>
-        <Text size="xsmall" className={margin < 0 ? "text-ui-tag-red-text" : "text-ui-fg-muted"}>
-          Charged the customer {money(deliveryNum, cur)} · costs us {money(feeNum, cur)} ·{" "}
-          <b>delivery {margin >= 0 ? "makes" : "loses"} {money(Math.abs(margin), cur)}</b>
-        </Text>
-      </div>
-
-      {/* Delivery charged (revenue) — the editable "overcharge" */}
-      <div className="flex flex-col gap-y-2 border-t border-ui-border-base pt-4">
-        <Label size="small">Delivery charged (what the customer pays us)</Label>
-        <div className="flex flex-wrap items-end gap-2">
-          <Input
-            type="number"
-            min="0"
-            step="1"
-            className="w-28"
-            value={deliveryCharged}
-            onChange={(e) => setDeliveryCharged(e.target.value)}
-          />
-          <Button
-            size="small"
-            variant="secondary"
-            onClick={() => saveDelivery.mutate()}
-            isLoading={saveDelivery.isPending}
-          >
-            Save
-          </Button>
-        </div>
-      </div>
-
-      {/* Production cost — pre-order / custom only */}
-      {isProduction && (
-        <div className="flex flex-col gap-y-2 border-t border-ui-border-base pt-4">
-          <Label size="small">Production cost (this order's cost of goods)</Label>
-          <div className="flex flex-wrap items-end gap-2">
-            <Input
-              type="number"
-              min="0"
-              step="1"
-              className="w-28"
-              value={prodCost}
-              onChange={(e) => setProdCost(e.target.value)}
+      {/* Charges & costs — collapsed by default; these rarely change (the courier fee is even set
+          for us), and each edit is a deliberate two-step (Edit → input → Save). */}
+      <div className="flex flex-col border-t border-ui-border-base pt-4">
+        <button
+          type="button"
+          onClick={() => setChargesOpen((v) => !v)}
+          className="flex items-center justify-between gap-2 text-left"
+        >
+          <Label size="small" className="cursor-pointer">Charges &amp; costs</Label>
+          <div className="flex items-center gap-x-2 text-ui-fg-subtle">
+            {!chargesOpen && (
+              <Text size="xsmall" className="text-ui-fg-muted">
+                delivery {margin >= 0 ? "makes" : "loses"} {money(Math.abs(margin), cur)}
+              </Text>
+            )}
+            <ChevronDownMini
+              className={`transition-transform ${chargesOpen ? "rotate-180" : ""}`}
             />
-            <Button
-              size="small"
-              variant="secondary"
-              onClick={() => saveProdCost.mutate()}
-              isLoading={saveProdCost.isPending}
-            >
-              Save
-            </Button>
           </div>
-          <Text size="xsmall" className="text-ui-fg-muted">
-            What it cost to make. Booked to the Cash Book and used as this order's COGS. Editable
-            any time — the P&amp;L recomputes.
-          </Text>
-        </div>
-      )}
+        </button>
+
+        {chargesOpen && (
+          <div className="flex flex-col gap-y-4 pt-3">
+            <ChargeRow
+              label="Courier fee (what they charge us)"
+              value={feeNum}
+              cur={cur}
+              onSave={(v) => saveFee.mutateAsync(v)}
+              help="Set by the courier automatically — a standard charge first, adjusted after the parcel is weighed. Edit only to override."
+            />
+            <ChargeRow
+              label="Delivery charged (what the customer pays us)"
+              value={deliveryNum}
+              cur={cur}
+              onSave={(v) => saveDelivery.mutateAsync(v)}
+              help={`Charged ${money(deliveryNum, cur)} · costs us ${money(feeNum, cur)} · delivery ${margin >= 0 ? "makes" : "loses"} ${money(Math.abs(margin), cur)}.`}
+            />
+            {isProduction && (
+              <ChargeRow
+                label="Production cost (this order's cost of goods)"
+                value={o.production_cost || 0}
+                cur={cur}
+                onSave={(v) => saveProdCost.mutateAsync(v)}
+                help="What it cost to make. Booked to the Cash Book and used as this order's COGS — the P&L recomputes."
+              />
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Issue */}
       <div className="flex flex-col gap-y-2 border-t border-ui-border-base pt-4">
@@ -533,9 +649,12 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
 function Timeline({
   pipeline,
   current,
+  bookedLabel,
 }: {
   pipeline: OrderStatusKey[]
   current: OrderStatusKey
+  /** Overrides the "Courier Booked" step label, e.g. "Booked with Steadfast Courier". */
+  bookedLabel?: string
 }) {
   // -1 when the order is off the line (On Hold, Cancelled…): nothing reads as current, and every
   // step reads as "not yet" rather than falsely as "done".
@@ -573,7 +692,7 @@ function Timeline({
                 weight={isCurrent ? "plus" : "regular"}
                 className={done || isCurrent ? "text-ui-fg-base" : "text-ui-fg-muted"}
               >
-                {ORDER_STATUS_META[s].label}
+                {s === "courier_booked" && bookedLabel ? bookedLabel : ORDER_STATUS_META[s].label}
               </Text>
               {isCurrent && (
                 <Badge size="2xsmall" color={ORDER_STATUS_META[s].color}>

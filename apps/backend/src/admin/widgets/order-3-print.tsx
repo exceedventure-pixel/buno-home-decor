@@ -410,7 +410,8 @@ const OrderInvoiceWidget = ({ data: order }: { data: { id: string } }) => {
 }
 
 export const config = defineWidgetConfig({
-  zone: "order.details.side.after",
+  // Sidebar top (above Medusa's Customer card), with the courier + processing widgets.
+  zone: "order.details.side.before",
 })
 
 export default OrderInvoiceWidget

@@ -201,7 +201,8 @@ function TrackingWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>
 }
 
 export const config = defineWidgetConfig({
-  zone: "order.details.side.after",
+  // Sidebar top (above Medusa's Customer card), just under the Order Processing panel.
+  zone: "order.details.side.before",
 })
 
 export default TrackingWidget
