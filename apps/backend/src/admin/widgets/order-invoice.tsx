@@ -310,15 +310,21 @@ function combinedDoc(order: any, econ: Econ, store: Store): string {
 
 /**
  * A6 packing slip — one packing slip on a small A6 sheet (105×148mm), the size for sticking on a
- * parcel. Same content as the standalone slip, in the compact layout.
+ * parcel. This is EXACTLY the slip that used to sit in the bottom half of the combined A4 (each of
+ * those two slips took an A6-sized space): the same compact body inside the same dashed `.slip`
+ * box (rounded, padding 8mm 7mm) — just filling a full A6 page instead of a half-A4 column. The
+ * 4mm body inset keeps the dashed frame clear of the printer's unprintable edge.
  */
 function a6PackingDoc(order: any, econ: Econ, store: Store): string {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Packing Slip #${esc(order.display_id)}</title>
   <style>
     ${STYLES}
     @page { size:A6; margin:0; }
-    .doc.packing.compact { padding:6mm; }
-  </style></head><body>${packingBody(order, econ, store, true)}</body></html>`
+    body { padding:4mm; }
+    .slip { width:97mm; height:140mm; border:1px dashed #ccc; border-radius:6px; padding:8mm 7mm; overflow:hidden; }
+  </style></head><body>
+    <div class="slip">${packingBody(order, econ, store, true)}</div>
+  </body></html>`
 }
 
 async function loadStore(): Promise<Store> {
