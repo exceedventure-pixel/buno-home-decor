@@ -281,28 +281,44 @@ function singleDoc(order: any, econ: Econ, store: Store, mode: "invoice" | "pack
  * COMBINED A4: invoice on the top half, TWO identical packing slips side-by-side on the bottom
  * half (one for the parcel, one to keep). Dashed guides show where to cut.
  */
+/**
+ * A4 merged: the full invoice up top, a single packing slip along the bottom — one document that
+ * is Invoice (option 1) + Packing Slip (option 2). The invoice keeps the larger share; the packing
+ * slip is a slimmer strip at the foot of the page, with a cut line between them.
+ */
 function combinedDoc(order: any, econ: Econ, store: Store): string {
-  const slip = packingBody(order, econ, store, true)
   return `<!doctype html><html><head><meta charset="utf-8"><title>Order #${esc(order.display_id)}</title>
   <style>
     ${STYLES}
     @page { size:A4; margin:0; }
     .sheet { width:210mm; height:297mm; display:flex; flex-direction:column; }
-    .top { height:149mm; padding:12mm 12mm 6mm; overflow:hidden; }
+    .top { height:180mm; padding:12mm 12mm 6mm; overflow:hidden; }
     .cut { border-top:1.5px dashed #999; position:relative; }
     .cut::after { content:"✂  cut here"; position:absolute; top:-8px; left:12mm; background:#fff; padding:0 6px; font-size:9px; color:#999; }
-    .bottom { flex:1; display:flex; padding:6mm 12mm 12mm; gap:8mm; }
-    .slip { flex:1; width:50%; border:1px dashed #ccc; border-radius:6px; padding:8mm 7mm; overflow:hidden; }
+    .bottom { flex:1; padding:6mm 12mm 10mm; overflow:hidden; }
+    .slip { height:100%; border:1px dashed #ccc; border-radius:6px; padding:6mm 8mm; overflow:hidden; }
   </style></head><body>
     <div class="sheet">
       <div class="top">${invoiceBody(order, econ, store, true)}</div>
       <div class="cut"></div>
       <div class="bottom">
-        <div class="slip">${slip}</div>
-        <div class="slip">${slip}</div>
+        <div class="slip">${packingBody(order, econ, store, true)}</div>
       </div>
     </div>
   </body></html>`
+}
+
+/**
+ * A6 packing slip — one packing slip on a small A6 sheet (105×148mm), the size for sticking on a
+ * parcel. Same content as the standalone slip, in the compact layout.
+ */
+function a6PackingDoc(order: any, econ: Econ, store: Store): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Packing Slip #${esc(order.display_id)}</title>
+  <style>
+    ${STYLES}
+    @page { size:A6; margin:0; }
+    .doc.packing.compact { padding:6mm; }
+  </style></head><body>${packingBody(order, econ, store, true)}</body></html>`
 }
 
 async function loadStore(): Promise<Store> {
@@ -322,7 +338,7 @@ async function loadStore(): Promise<Store> {
 const OrderInvoiceWidget = ({ data: order }: { data: { id: string } }) => {
   const [busy, setBusy] = useState(false)
 
-  const print = async (mode: "invoice" | "packing" | "combined") => {
+  const print = async (mode: "invoice" | "packing" | "combined" | "a6") => {
     setBusy(true)
     try {
       const { order: full } = await adminFetch<{ order: any }>(
@@ -342,6 +358,8 @@ const OrderInvoiceWidget = ({ data: order }: { data: { id: string } }) => {
       const html =
         mode === "combined"
           ? combinedDoc(full, econ, store)
+          : mode === "a6"
+          ? a6PackingDoc(full, econ, store)
           : singleDoc(full, econ, store, mode)
 
       const w = window.open("", "_blank", "width=900,height=1000")
@@ -364,8 +382,8 @@ const OrderInvoiceWidget = ({ data: order }: { data: { id: string } }) => {
     <Container className="px-6 py-4 flex flex-col gap-y-3">
       <Heading level="h2">Print</Heading>
       <Text size="small" className="text-ui-fg-subtle">
-        Branded invoice (prices, advance &amp; COD), a packing slip, or the combined A4 — invoice on
-        top, two packing slips below.
+        Branded invoice, a packing slip, the combined A4 (invoice on top, packing slip below), or a
+        small A6 packing slip for the parcel.
       </Text>
       <div className="flex flex-wrap gap-2">
         <Button size="small" disabled={busy} onClick={() => print("invoice")}>
@@ -376,6 +394,9 @@ const OrderInvoiceWidget = ({ data: order }: { data: { id: string } }) => {
         </Button>
         <Button size="small" variant="secondary" disabled={busy} onClick={() => print("combined")}>
           Combined A4
+        </Button>
+        <Button size="small" variant="secondary" disabled={busy} onClick={() => print("a6")}>
+          A6 Packing slip
         </Button>
       </div>
     </Container>

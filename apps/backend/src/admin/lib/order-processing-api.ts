@@ -58,7 +58,10 @@ export const EXCEPTION_STATUSES: OrderStatusKey[] = [
   "on_hold", "cancelled", "returned", "refunded",
 ]
 
-const PRODUCTION_ONLY: OrderStatusKey[] = ["in_production", "ready_to_dispatch", "courier_booked"]
+// Mirrors PRODUCTION_ONLY_STATUSES in the backend constants: only the workshop stages are
+// production-only. `courier_booked` is NOT here — every order type can be booked with a courier,
+// so ready-stock timelines must show it too.
+const PRODUCTION_ONLY: OrderStatusKey[] = ["in_production", "ready_to_dispatch"]
 
 export const isExceptionStatus = (s: OrderStatusKey) => EXCEPTION_STATUSES.includes(s)
 
@@ -84,6 +87,24 @@ export const ISSUE_STATUS_META: Record<IssueStatusKey, { label: string; color: C
   wrong_product:      { label: "Wrong Product",      color: "orange" },
   exchange_requested: { label: "Exchange Requested", color: "blue" },
   refunded:           { label: "Refunded",           color: "red" },
+}
+
+/**
+ * The action a step's button performs, phrased as an imperative — so the control reads like a verb
+ * ("Mark as delivered") instead of a location ("Move here"). Keyed by the TARGET status.
+ */
+export const NEXT_ACTION_LABEL: Record<OrderStatusKey, string> = {
+  new_order:         "Reopen",
+  confirmed:         "Confirm order",
+  in_production:     "Start production",
+  ready_to_dispatch: "Mark ready to dispatch",
+  courier_booked:    "Send to courier",
+  dispatched:        "Mark dispatched",
+  delivered:         "Mark as delivered",
+  returned:          "Mark returned",
+  cancelled:         "Cancel order",
+  on_hold:           "Put on hold",
+  refunded:          "Refund",
 }
 
 /** What each status change will actually DO — shown in the confirmation, so nobody is surprised. */

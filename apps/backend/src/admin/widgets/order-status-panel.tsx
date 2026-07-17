@@ -15,9 +15,11 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 
+import { adminFetch } from "../lib/api"
 import { money } from "../lib/kpi"
 import {
   ISSUE_STATUS_META,
+  NEXT_ACTION_LABEL,
   ORDER_STATUS_META,
   ORDER_TYPE_META,
   PAYMENT_STATUS_META,
@@ -28,6 +30,23 @@ import {
   type IssueStatusKey,
   type OrderStatusKey,
 } from "../lib/order-processing-api"
+
+// The active courier is read from the same endpoint the settings page uses.
+type CourierRow = {
+  courier_id: "steadfast" | "redx" | "pathao"
+  is_active: boolean
+  configured: boolean
+  settings: Record<string, unknown> | null
+}
+
+const COURIER_NAMES: Record<string, string> = {
+  steadfast: "Steadfast Courier",
+  redx: "RedX",
+  pathao: "Pathao",
+}
+
+// Ship statuses are driven by the Shipment-method chooser, not the generic Next-step buttons.
+const SHIP_STATUSES: OrderStatusKey[] = ["courier_booked", "dispatched"]
 
 /**
  * The control panel. Changing a status here PERFORMS the action — it doesn't just label it —
@@ -50,6 +69,16 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
     refetchOnWindowFocus: true,
     refetchInterval: 15000,
   })
+
+  // Which courier (if any) is active — so the shipment chooser can name it and know if booking
+  // is even possible. Cheap and cached; shared with the settings page under the same key.
+  const { data: couriersData } = useQuery({
+    queryKey: ["admin-couriers"],
+    queryFn: () => adminFetch<{ couriers: CourierRow[] }>("/couriers"),
+    staleTime: 60000,
+  })
+  const activeCourier =
+    couriersData?.couriers?.find((c) => c.is_active && c.configured) ?? null
 
   const [pending, setPending] = useState<OrderStatusKey | null>(null)
   const [fee, setFee] = useState("")
@@ -155,6 +184,15 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   const exceptionNext = next.filter(isExceptionStatus)
   const offTheLine = isExceptionStatus(o.order_status)
 
+  // The Shipment-method chooser owns the courier-vs-manual decision, shown once the order is ready
+  // to ship and not already booked. When it's up, the generic Next-step buttons hide the ship
+  // statuses so there's exactly one place to make that call.
+  const shipChooser = !o.consignment_id && next.includes("courier_booked")
+  const forwardNext = next.filter((s) => !isExceptionStatus(s))
+  const nextActions = (shipChooser ? forwardNext.filter((s) => !SHIP_STATUSES.includes(s)) : forwardNext)
+    .slice()
+    .sort((a, b) => pipeline.indexOf(a) - pipeline.indexOf(b))
+
   const feeNum = Number(fee) || 0
   const deliveryNum = Number(deliveryCharged) || 0
   const margin = deliveryNum - feeNum
@@ -195,29 +233,65 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
         </Text>
       )}
 
-      {/* Courier shipment — shown once booked (before any fulfilment exists) */}
-      {o.consignment_id && (
-        <div className="flex flex-col gap-y-1 border-t border-ui-border-base pt-4">
-          <Label size="small">Courier shipment</Label>
-          <Text size="xsmall" className="text-ui-fg-subtle">
-            {o.courier_id ? o.courier_id[0].toUpperCase() + o.courier_id.slice(1) : "Courier"} · status{" "}
-            <b>{o.courier_status ?? "pending"}</b>
-          </Text>
-          {o.tracking && (
-            <Text size="xsmall" className="text-ui-fg-subtle font-mono">
-              Tracking: {o.tracking}
-            </Text>
-          )}
-          <Text size="xsmall" className="text-ui-fg-muted">
-            COD sent {money(o.cod_amount ?? 0, cur)}
-            {o.actual_delivery_charge != null
-              ? ` · courier charged ${money(o.actual_delivery_charge, cur)}`
-              : ""}
-          </Text>
+      {/* Ship this order — the clear fork: courier OR manual. Only while the order is ready to ship
+          and not already booked. Courier details (tracking, COD, status) live in the dedicated
+          "Courier Delivery" widget once it's booked, not here. */}
+      {shipChooser && (
+        <div className="flex flex-col gap-y-2 border-t border-ui-border-base pt-4">
+          <Label size="small">Ship this order</Label>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {/* Courier */}
+            <div className="flex flex-col justify-between gap-y-2 rounded-lg border border-ui-border-base p-3">
+              <div className="flex flex-col gap-y-1">
+                <div className="flex items-center gap-x-2">
+                  <Text size="small" weight="plus">🚚 Ship by courier</Text>
+                  {activeCourier && (
+                    <Badge size="2xsmall" color="green">Active</Badge>
+                  )}
+                </div>
+                {activeCourier ? (
+                  <Text size="xsmall" className="text-ui-fg-subtle">
+                    {COURIER_NAMES[activeCourier.courier_id] ?? "Courier"} · books the parcel and
+                    dispatches automatically on pickup. COD defaults to what's still owed.
+                  </Text>
+                ) : (
+                  <Text size="xsmall" className="text-ui-fg-muted">
+                    No courier is active.{" "}
+                    <a href="/app/store-settings" className="text-ui-fg-interactive hover:underline">
+                      Set one up in Store Settings → Couriers
+                    </a>
+                    .
+                  </Text>
+                )}
+              </div>
+              <Button
+                size="small"
+                disabled={!activeCourier}
+                onClick={() => setPending("courier_booked")}
+              >
+                Send to courier
+              </Button>
+            </div>
+
+            {/* Manual */}
+            <div className="flex flex-col justify-between gap-y-2 rounded-lg border border-ui-border-base p-3">
+              <div className="flex flex-col gap-y-1">
+                <Text size="small" weight="plus">📦 Manual delivery</Text>
+                <Text size="xsmall" className="text-ui-fg-subtle">
+                  You ship it yourself — no courier booked. Dispatches now: stock leaves and cost of
+                  goods books.
+                </Text>
+              </div>
+              <Button size="small" variant="secondary" onClick={() => setPending("dispatched")}>
+                Ship manually
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Where it is on the line, and where it can go next */}
+      {/* Where it is on the line. The timeline is a read-only progress view; actions live in the
+          "Next step" row below it, phrased as verbs. */}
       <div className="flex flex-col gap-y-3 border-t border-ui-border-base pt-4">
         <Label size="small">Progress</Label>
 
@@ -228,19 +302,34 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
                 {os.label}
               </Badge>{" "}
               {o.order_status === "on_hold"
-                ? "— paused. Pick a step below to put it back on the line."
+                ? "— paused. Use a step below to put it back on the line."
                 : "— this order came off the line."}
             </Text>
           </div>
         )}
 
-        <Timeline
-          pipeline={pipeline}
-          current={o.order_status}
-          allowedNext={next}
-          onPick={setPending}
-        />
+        <Timeline pipeline={pipeline} current={o.order_status} />
       </div>
+
+      {/* Next step — the forward action(s), labeled as what they DO. Ship statuses are handled by
+          the chooser above, so they don't appear here while it's shown. */}
+      {nextActions.length > 0 && (
+        <div className="flex flex-col gap-y-2">
+          <Label size="small">Next step</Label>
+          <div className="flex flex-wrap gap-1.5">
+            {nextActions.map((s, i) => (
+              <Button
+                key={s}
+                size="small"
+                variant={i === 0 ? "primary" : "secondary"}
+                onClick={() => setPending(s)}
+              >
+                {NEXT_ACTION_LABEL[s]}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* The exits. Not steps on the line, so they don't belong on the timeline. */}
       {exceptionNext.length > 0 && (
@@ -384,12 +473,12 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
           <Prompt.Header>
             <Prompt.Title>
               {pending === "courier_booked"
-                ? "Send to Steadfast?"
-                : `Move to ${pending ? ORDER_STATUS_META[pending].label : ""}?`}
+                ? `Send to ${activeCourier ? COURIER_NAMES[activeCourier.courier_id] : "courier"}?`
+                : `${pending ? NEXT_ACTION_LABEL[pending] : ""}?`}
             </Prompt.Title>
             <Prompt.Description>
               {pending === "courier_booked"
-                ? "Books the parcel with your active courier. Stock does NOT move yet — the order dispatches automatically when the courier reports pickup."
+                ? `Books the parcel with ${activeCourier ? COURIER_NAMES[activeCourier.courier_id] : "your active courier"}. Stock does NOT move yet — the order dispatches automatically when the courier reports pickup.`
                 : (pending && TRANSITION_EFFECT[pending]) ??
                   "Records the stage. Nothing moves in stock or cash."}
             </Prompt.Description>
@@ -434,22 +523,19 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
 }
 
 /**
- * The pipeline drawn as a line: what's done, where it is now, and what's still ahead — so the
- * whole journey is visible at a glance instead of inferred from a lone badge.
+ * The pipeline drawn as a line: what's done, where it is now, and what's still ahead — visible at a
+ * glance instead of inferred from a lone badge.
  *
- * Only steps the guards actually allow are clickable. An upcoming step with no button isn't
- * broken; it's simply not reachable from here yet (you can't deliver what never shipped).
+ * This is READ-ONLY on purpose. It used to carry a "Move here" button on every reachable step,
+ * which read as navigation and buried the one action that mattered. Advancing the order is now the
+ * job of the verb-labeled "Next step" buttons (and the Shipment chooser) beside it.
  */
 function Timeline({
   pipeline,
   current,
-  allowedNext,
-  onPick,
 }: {
   pipeline: OrderStatusKey[]
   current: OrderStatusKey
-  allowedNext: OrderStatusKey[]
-  onPick: (s: OrderStatusKey) => void
 }) {
   // -1 when the order is off the line (On Hold, Cancelled…): nothing reads as current, and every
   // step reads as "not yet" rather than falsely as "done".
@@ -460,7 +546,6 @@ function Timeline({
       {pipeline.map((s, i) => {
         const done = currentIdx >= 0 && i < currentIdx
         const isCurrent = i === currentIdx
-        const canMove = allowedNext.includes(s)
         const isLast = i === pipeline.length - 1
 
         return (
@@ -482,7 +567,7 @@ function Timeline({
               )}
             </div>
 
-            <div className={`flex min-h-[28px] flex-wrap items-center gap-2 ${isLast ? "" : "pb-3"}`}>
+            <div className={`flex min-h-[24px] flex-wrap items-center gap-2 ${isLast ? "" : "pb-3"}`}>
               <Text
                 size="small"
                 weight={isCurrent ? "plus" : "regular"}
@@ -494,11 +579,6 @@ function Timeline({
                 <Badge size="2xsmall" color={ORDER_STATUS_META[s].color}>
                   Now
                 </Badge>
-              )}
-              {canMove && (
-                <Button size="small" variant="secondary" onClick={() => onPick(s)}>
-                  Move here
-                </Button>
               )}
             </div>
           </li>

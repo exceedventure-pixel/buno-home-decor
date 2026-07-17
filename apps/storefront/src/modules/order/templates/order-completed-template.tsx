@@ -1,7 +1,9 @@
 import { Heading } from "@modules/common/components/ui"
 import { cookies as nextCookies } from "next/headers"
 
+import { OrderCourierTracking } from "@lib/data/orders"
 import CartTotals from "@modules/common/components/cart-totals"
+import CourierTracking from "@modules/order/components/courier-tracking"
 import Help from "@modules/order/components/help"
 import Items from "@modules/order/components/items"
 import OnboardingCta from "@modules/order/components/onboarding-cta"
@@ -13,10 +15,12 @@ import { HttpTypes } from "@medusajs/types"
 
 type OrderCompletedTemplateProps = {
   order: HttpTypes.StoreOrder
+  tracking?: OrderCourierTracking | null
 }
 
 export default async function OrderCompletedTemplate({
   order,
+  tracking = null,
 }: OrderCompletedTemplateProps) {
   const cookies = await nextCookies()
 
@@ -53,6 +57,7 @@ export default async function OrderCompletedTemplate({
             <span>Your order was placed successfully.</span>
           </Heading>
           <OrderDetails order={order} />
+          <CourierTracking tracking={tracking} />
           <Heading level="h2" className="flex flex-row text-3xl-regular">
             Summary
           </Heading>

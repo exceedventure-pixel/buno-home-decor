@@ -1,55 +1,99 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
-import { Container, Text, Badge, Button, Prompt, toast } from "@medusajs/ui"
 import type { DetailWidgetProps, HttpTypes } from "@medusajs/framework/types"
-import { useQueryClient } from "@tanstack/react-query"
+import { Badge, Button, Container, Prompt, Text, toast } from "@medusajs/ui"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
+
 import { adminFetch } from "../lib/api"
+import { money } from "../lib/kpi"
+import { opApi } from "../lib/order-processing-api"
 
-type NormalizedStatus = "pending_booking" | "booked" | "pending" | "in_transit" | "delivered" | "returned" | "cancelled" | "unknown"
+/**
+ * COURIER DELIVERY — the dedicated view of a courier shipment, on the order page.
+ *
+ * It reads from the order-processing endpoint (not fulfillment.data), so it appears the moment the
+ * parcel is BOOKED — before any fulfilment exists — and it live-updates as the courier's status
+ * flows in (webhook / poll). It shows the order id, consignment, tracking + a public track link,
+ * the COD to collect, and the actual delivery charge once the courier reports one.
+ *
+ * Manual shipments have no consignment, so this renders nothing for them (correct).
+ */
 
-const STATUS_LABELS: Record<string, { label: string; color: "grey" | "blue" | "green" | "orange" | "red" }> = {
-  pending_booking: { label: "Pending booking", color: "grey" },
-  booked:          { label: "Booked",          color: "blue" },
-  pending:         { label: "Pending pickup",  color: "grey" },
-  in_transit:      { label: "In transit",      color: "blue" },
-  delivered:       { label: "Delivered",       color: "green" },
-  returned:        { label: "Returned",        color: "orange" },
-  cancelled:       { label: "Cancelled",       color: "red" },
-  unknown:         { label: "Unknown",         color: "grey" },
+const STATUS_LABELS: Record<
+  string,
+  { label: string; color: "grey" | "blue" | "green" | "orange" | "red" }
+> = {
+  pending:    { label: "Awaiting pickup", color: "grey" },
+  in_transit: { label: "In transit",      color: "blue" },
+  delivered:  { label: "Delivered",       color: "green" },
+  returned:   { label: "Returned",        color: "orange" },
+  cancelled:  { label: "Cancelled",       color: "red" },
+  unknown:    { label: "Unknown",         color: "grey" },
 }
 
 const COURIER_NAMES: Record<string, string> = {
   steadfast: "Steadfast Courier",
-  redx:      "RedX",
-  pathao:    "Pathao",
+  redx: "RedX",
+  pathao: "Pathao",
+}
+
+// Public tracking-link builders — mirror the store route's TRACK_URL. Verify formats against each
+// courier's live site; a missing/unknown format simply omits the link.
+const TRACK_URL: Record<string, (code: string) => string | null> = {
+  steadfast: (code) => (code ? `https://steadfast.com.bd/t/${encodeURIComponent(code)}` : null),
+  redx: (code) =>
+    code ? `https://redx.com.bd/track-global-parcel/?trackingId=${encodeURIComponent(code)}` : null,
+  pathao: () => null,
+}
+
+function Row({ label, children }: { label: string; children: string }) {
+  return (
+    <div className="flex items-center gap-x-2">
+      <Text size="small" className="text-ui-fg-subtle">
+        {label}:
+      </Text>
+      <Text size="small" className="text-ui-fg-base font-mono">
+        {children}
+      </Text>
+    </div>
+  )
 }
 
 function TrackingWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>) {
+  const orderId = (order as any).id
   const qc = useQueryClient()
+  const cur = (order as any).currency_code ?? "bdt"
   const [busy, setBusy] = useState(false)
   const [promptOpen, setPromptOpen] = useState(false)
 
-  const fulfillments: any[] = (order as any).fulfillments ?? []
-  // Courier data is mirrored onto fulfillment.data by the subscriber, whatever provider actually
-  // created the fulfilment — so key off that, not the provider id.
-  const courierFulfillments = fulfillments.filter((f: any) => f.data?.courier_id)
+  const { data } = useQuery({
+    queryKey: ["order-processing", orderId],
+    queryFn: () => opApi.get(orderId),
+    // Shares the panel's cache key, and live-updates as courier status arrives.
+    refetchOnWindowFocus: true,
+    refetchInterval: 15000,
+  })
 
-  if (courierFulfillments.length === 0) return null
+  const o = data?.order
+  // Only a booked courier order has a consignment — manual shipments never reach here.
+  if (!o?.consignment_id) return null
 
-  const alreadyReturned = courierFulfillments.some((f: any) => f.data?.courier_status === "returned")
-  const allCancelled = courierFulfillments.every((f: any) => f.data?.courier_status === "cancelled")
+  const statusInfo = STATUS_LABELS[o.courier_status ?? "pending"] ?? STATUS_LABELS.unknown
+  const courierName = COURIER_NAMES[o.courier_id ?? ""] ?? o.courier_id ?? "Courier"
+  const trackUrl = o.tracking ? TRACK_URL[o.courier_id ?? ""]?.(o.tracking) ?? null : null
+
+  const alreadyReturned = o.courier_status === "returned"
+  const isCancelled = o.courier_status === "cancelled"
 
   const handleReturn = async () => {
     setBusy(true)
     try {
       const r = await adminFetch<{ success: boolean; created: boolean; items?: number; message?: string }>(
-        `/orders/${(order as any).id}/mark-returned`,
+        `/orders/${orderId}/mark-returned`,
         { method: "POST" }
       )
       if (r.created) {
         toast.success(`Return recorded — ${r.items} item type(s) restocked`)
-        // Refetch in place instead of reloading the page: the native order panels and our
-        // order-processing panel + Cash Book all update on their own.
         qc.invalidateQueries({ queryKey: ["orders"] })
         qc.invalidateQueries({ queryKey: ["order-processing"] })
         qc.invalidateQueries({ queryKey: ["accounting"] })
@@ -66,55 +110,60 @@ function TrackingWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>
 
   return (
     <Container className="divide-y divide-ui-border-base p-0">
-      <div className="px-6 py-4">
+      <div className="flex items-center justify-between px-6 py-4">
         <Text size="base" weight="plus">
-          Courier Tracking
+          Courier Delivery
+        </Text>
+        <Badge color={statusInfo.color} size="2xsmall">
+          {statusInfo.label}
+        </Badge>
+      </div>
+
+      <div className="flex flex-col gap-y-2 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <Text size="small" weight="plus" className="text-ui-fg-base">
+            {courierName}
+          </Text>
+          <Text size="small" className="text-ui-fg-subtle">
+            Order #{o.display_id}
+          </Text>
+        </div>
+
+        {o.tracking && (
+          <div className="flex flex-wrap items-center gap-x-2">
+            <Text size="small" className="text-ui-fg-subtle">
+              Tracking #:
+            </Text>
+            <Text size="small" className="text-ui-fg-base font-mono">
+              {o.tracking}
+            </Text>
+            {trackUrl && (
+              <a
+                href={trackUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-ui-fg-interactive text-sm hover:underline"
+              >
+                Track parcel ↗
+              </a>
+            )}
+          </div>
+        )}
+
+        {o.consignment_id && o.consignment_id !== o.tracking && (
+          <Row label="Consignment">{o.consignment_id}</Row>
+        )}
+
+        <Text size="xsmall" className="text-ui-fg-muted">
+          COD to collect {money(o.cod_amount ?? 0, cur)}
+          {o.actual_delivery_charge != null
+            ? ` · courier charged ${money(o.actual_delivery_charge, cur)}`
+            : ""}
         </Text>
       </div>
 
-      {courierFulfillments.map((f: any) => {
-        const d = f.data ?? {}
-        const statusInfo = STATUS_LABELS[d.courier_status as NormalizedStatus] ?? STATUS_LABELS.unknown
-        const courierName = COURIER_NAMES[d.courier_id] ?? d.courier_id ?? "Courier"
-
-        return (
-          <div key={f.id} className="flex flex-col gap-y-2 px-6 py-4">
-            <div className="flex items-center justify-between">
-              <Text size="small" weight="plus" className="text-ui-fg-base">
-                {courierName}
-              </Text>
-              <Badge color={statusInfo.color} size="2xsmall">
-                {statusInfo.label}
-              </Badge>
-            </div>
-
-            {d.tracking_id && (
-              <div className="flex items-center gap-x-2">
-                <Text size="small" className="text-ui-fg-subtle">
-                  Tracking #:
-                </Text>
-                <Text size="small" className="text-ui-fg-base font-mono">
-                  {d.tracking_id}
-                </Text>
-              </div>
-            )}
-
-            {d.consignment_id && d.consignment_id !== d.tracking_id && (
-              <div className="flex items-center gap-x-2">
-                <Text size="small" className="text-ui-fg-subtle">
-                  Consignment:
-                </Text>
-                <Text size="small" className="text-ui-fg-base font-mono">
-                  {d.consignment_id}
-                </Text>
-              </div>
-            )}
-          </div>
-        )
-      })}
-
-      {!allCancelled && (
-        <div className="px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+      {!isCancelled && (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
           <Text size="small" className="text-ui-fg-subtle">
             {alreadyReturned
               ? "This order was returned — items have been restocked."
@@ -143,7 +192,7 @@ function TrackingWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>
           </Prompt.Header>
           <Prompt.Footer>
             <Prompt.Cancel disabled={busy}>Cancel</Prompt.Cancel>
-            <Prompt.Action onClick={handleReturn}>Return & restock</Prompt.Action>
+            <Prompt.Action onClick={handleReturn}>Return &amp; restock</Prompt.Action>
           </Prompt.Footer>
         </Prompt.Content>
       </Prompt>
