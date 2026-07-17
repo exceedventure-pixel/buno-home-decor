@@ -10,11 +10,11 @@ import { Migration } from "@medusajs/framework/mikro-orm/migrations";
 export class Migration20260717095833 extends Migration {
 
   override async up(): Promise<void> {
-    this.addSql(`alter table if exists "store_setting" add column if not exists "invoice_phone" text null, add column if not exists "social_links" jsonb null;`);
+    this.addSql(`alter table if exists "store_setting" add column if not exists "invoice_phone" text null, add column if not exists "invoice_email" text null, add column if not exists "invoice_address" text null, add column if not exists "hotline" text null, add column if not exists "social_links" jsonb null;`);
   }
 
   override async down(): Promise<void> {
-    this.addSql(`alter table if exists "store_setting" drop column if exists "invoice_phone", drop column if exists "social_links";`);
+    this.addSql(`alter table if exists "store_setting" drop column if exists "invoice_phone", drop column if exists "invoice_email", drop column if exists "invoice_address", drop column if exists "hotline", drop column if exists "social_links";`);
   }
 
 }

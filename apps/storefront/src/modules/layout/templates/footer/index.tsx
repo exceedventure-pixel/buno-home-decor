@@ -110,6 +110,7 @@ export default async function Footer() {
     address: settings.store_address || brand.contact.address,
     phone: settings.order_phone || brand.contact.phone,
     email: settings.store_email || brand.contact.email,
+    hotline: settings.hotline || "",
   }
   const social = {
     facebook: settings.social_links?.facebook || brand.social.facebook,
@@ -156,6 +157,15 @@ export default async function Footer() {
                 <Phone className="w-4 h-4 shrink-0 text-ui-fg-muted" />
                 <span>{contact.phone}</span>
               </a>
+              {contact.hotline && (
+                <div className="flex items-center gap-2.5">
+                  <Phone className="w-4 h-4 shrink-0 text-ui-fg-muted" />
+                  <span>
+                    <span className="text-ui-fg-muted">Hotline: </span>
+                    {contact.hotline}
+                  </span>
+                </div>
+              )}
               <a
                 href={`mailto:${contact.email}`}
                 className="flex items-center gap-2.5 hover:text-[var(--brand-primary)] transition-colors"

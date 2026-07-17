@@ -6,7 +6,6 @@ import {
   ChartBar,
   Key,
   EnvelopeSolid,
-  ChatBubbleLeftRight,
   Photo,
   ExclamationCircle,
   Trash,
@@ -80,16 +79,19 @@ function CategorySection({
   )
 }
 
-// ── Contact buttons (storefront) ───────────────────────────────────────────────
+// ── Contact & Invoice tab ───────────────────────────────────────────────────────
 
 type Social = { facebook: string; instagram: string; tiktok: string; youtube: string }
 
 function ContactSettings() {
   const [whatsapp, setWhatsapp] = useState("")
   const [phone, setPhone] = useState("")
+  const [footerEmail, setFooterEmail] = useState("")
+  const [footerAddress, setFooterAddress] = useState("")
   const [invoicePhone, setInvoicePhone] = useState("")
-  const [email, setEmail] = useState("")
-  const [address, setAddress] = useState("")
+  const [invoiceEmail, setInvoiceEmail] = useState("")
+  const [invoiceAddress, setInvoiceAddress] = useState("")
+  const [hotline, setHotline] = useState("")
   const [social, setSocial] = useState<Social>({ facebook: "", instagram: "", tiktok: "", youtube: "" })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -99,18 +101,24 @@ function ContactSettings() {
       setting: {
         whatsapp_number: string | null
         order_phone: string | null
-        invoice_phone: string | null
         store_email: string | null
         store_address: string | null
+        invoice_phone: string | null
+        invoice_email: string | null
+        invoice_address: string | null
+        hotline: string | null
         social_links: Partial<Social> | null
       }
     }>("/store-settings")
       .then(({ setting }) => {
         setWhatsapp(setting?.whatsapp_number ?? "")
         setPhone(setting?.order_phone ?? "")
+        setFooterEmail(setting?.store_email ?? "")
+        setFooterAddress(setting?.store_address ?? "")
         setInvoicePhone(setting?.invoice_phone ?? "")
-        setEmail(setting?.store_email ?? "")
-        setAddress(setting?.store_address ?? "")
+        setInvoiceEmail(setting?.invoice_email ?? "")
+        setInvoiceAddress(setting?.invoice_address ?? "")
+        setHotline(setting?.hotline ?? "")
         const s = setting?.social_links ?? {}
         setSocial({
           facebook: s.facebook ?? "",
@@ -133,9 +141,12 @@ function ContactSettings() {
         body: JSON.stringify({
           whatsapp_number: whatsapp.trim() || null,
           order_phone: phone.trim() || null,
+          store_email: footerEmail.trim() || null,
+          store_address: footerAddress.trim() || null,
           invoice_phone: invoicePhone.trim() || null,
-          store_email: email.trim() || null,
-          store_address: address.trim() || null,
+          invoice_email: invoiceEmail.trim() || null,
+          invoice_address: invoiceAddress.trim() || null,
+          hotline: hotline.trim() || null,
           social_links: {
             facebook: social.facebook.trim(),
             instagram: social.instagram.trim(),
@@ -160,56 +171,63 @@ function ContactSettings() {
     </div>
   )
 
+  const group = (title: string, desc: string, children: ReactNode, first = false) => (
+    <div className={`flex flex-col gap-y-4 ${first ? "" : "border-t border-ui-border-base pt-6"}`}>
+      <div>
+        <Text size="small" weight="plus">{title}</Text>
+        <Text size="xsmall" className="text-ui-fg-muted">{desc}</Text>
+      </div>
+      {children}
+    </div>
+  )
+
   return (
-    <Container className="px-6 py-6 flex flex-col gap-y-6">
-      {/* Storefront buttons — how customers reach you before ordering. */}
-      <div className="flex flex-col gap-y-4">
-        <div>
-          <Text size="small" weight="plus">Storefront buttons</Text>
-          <Text size="xsmall" className="text-ui-fg-muted">
-            The WhatsApp &amp; call buttons shown to customers on the storefront.
-          </Text>
-        </div>
-        {field("WhatsApp Number", whatsapp, setWhatsapp, "+8801712345678", "Include country code. Leave blank to hide the WhatsApp button.")}
-        {field("Order Phone Number", phone, setPhone, "+8801712345678", 'For the "Call For Order" button and the storefront footer. Leave blank to hide.')}
-      </div>
+    <Container className="px-6 py-6 flex flex-col gap-y-6 max-w-2xl">
+      {group(
+        "Order buttons",
+        "The WhatsApp & call buttons customers use on the storefront to place an order.",
+        <>
+          {field("WhatsApp Number", whatsapp, setWhatsapp, "+8801712345678", "Include country code. Leave blank to hide the WhatsApp button.")}
+          {field("Order Phone Number", phone, setPhone, "+8801712345678", 'For the "Call For Order" button. Leave blank to hide.')}
+        </>,
+        true
+      )}
 
-      {/* Address & email — shown on the storefront footer AND on printed invoices. */}
-      <div className="flex flex-col gap-y-4 border-t border-ui-border-base pt-6">
-        <div>
-          <Text size="small" weight="plus">Address &amp; email</Text>
-          <Text size="xsmall" className="text-ui-fg-muted">
-            Shown on the storefront footer and printed on invoices &amp; packing slips.
-          </Text>
-        </div>
-        {field("Store Address", address, setAddress, "Banktown, Savar, Dhaka 1340, Bangladesh")}
-        {field("Store Email", email, setEmail, "hello@yourstore.com")}
-      </div>
+      {group(
+        "Footer contact",
+        "Email & address shown in the storefront footer.",
+        <>
+          {field("Footer Email", footerEmail, setFooterEmail, "hello@yourstore.com")}
+          {field("Footer Address", footerAddress, setFooterAddress, "Banktown, Savar, Dhaka 1340, Bangladesh")}
+        </>
+      )}
 
-      {/* Social media — storefront footer icons. */}
-      <div className="flex flex-col gap-y-4 border-t border-ui-border-base pt-6">
-        <div>
-          <Text size="small" weight="plus">Social media</Text>
-          <Text size="xsmall" className="text-ui-fg-muted">
-            Full profile URLs for the storefront footer. Leave a field blank to hide its icon.
-          </Text>
-        </div>
-        {field("Facebook", social.facebook, (v) => setSoc("facebook", v), "https://facebook.com/yourstore")}
-        {field("Instagram", social.instagram, (v) => setSoc("instagram", v), "https://instagram.com/yourstore")}
-        {field("TikTok", social.tiktok, (v) => setSoc("tiktok", v), "https://tiktok.com/@yourstore")}
-        {field("YouTube", social.youtube, (v) => setSoc("youtube", v), "https://youtube.com/@yourstore")}
-      </div>
+      {group(
+        "Invoice & packing contact",
+        "Contact details printed on invoices & packing slips — independent of the footer. Blank fields fall back to the footer / order phone.",
+        <>
+          {field("Invoice Phone", invoicePhone, setInvoicePhone, "+8801xxxxxxxxx", "Falls back to the order phone if blank.")}
+          {field("Invoice Email", invoiceEmail, setInvoiceEmail, "orders@yourstore.com", "Falls back to the footer email if blank.")}
+          {field("Invoice / Return Address", invoiceAddress, setInvoiceAddress, "Warehouse, Savar, Dhaka", "Falls back to the footer address if blank.")}
+        </>
+      )}
 
-      {/* Invoice — the one detail that differs from the storefront. */}
-      <div className="flex flex-col gap-y-4 border-t border-ui-border-base pt-6">
-        <div>
-          <Text size="small" weight="plus">Invoice</Text>
-          <Text size="xsmall" className="text-ui-fg-muted">
-            Printed on invoices &amp; packing slips.
-          </Text>
-        </div>
-        {field("Invoice Phone", invoicePhone, setInvoicePhone, "+8801xxxxxxxxx", "The number printed on invoices. Leave blank to fall back to the order phone above.")}
-      </div>
+      {group(
+        "Hotline contacts",
+        "Customer-service hotline number(s) shown on the storefront. Separate multiple numbers with a comma.",
+        field("Hotline", hotline, setHotline, "16xxx, +8801xxxxxxxxx")
+      )}
+
+      {group(
+        "Social media handles",
+        "Full profile URLs for the storefront footer. Leave a field blank to hide its icon.",
+        <>
+          {field("Facebook", social.facebook, (v) => setSoc("facebook", v), "https://facebook.com/yourstore")}
+          {field("Instagram", social.instagram, (v) => setSoc("instagram", v), "https://instagram.com/yourstore")}
+          {field("TikTok", social.tiktok, (v) => setSoc("tiktok", v), "https://tiktok.com/@yourstore")}
+          {field("YouTube", social.youtube, (v) => setSoc("youtube", v), "https://youtube.com/@yourstore")}
+        </>
+      )}
 
       <div className="flex justify-end">
         <Button onClick={handleSave} isLoading={saving} disabled={loading || saving}>
@@ -231,10 +249,6 @@ function IntegrationSettings() {
         Integration secrets (API keys, tokens) are set as environment variables on your server.
         Each card shows whether it is configured and lets you turn it on or off.
       </Text>
-
-      <CategorySection title="Contact & Invoice Details" description="WhatsApp, phone, email & address — used on the storefront and printed invoices" icon={ChatBubbleLeftRight} defaultOpen>
-        <ContactSettings />
-      </CategorySection>
 
       <CategorySection title="Payments" description="Stripe, SSLCommerz, bKash" icon={CreditCardSolid}>
         <PaymentsSection />
@@ -289,6 +303,7 @@ const StoreSettingsPage = () => {
     () =>
       [
         can("store_settings", "read") && { value: "integrations", label: "Integrations" },
+        can("store_settings", "read") && { value: "contact", label: "Contact & Invoice" },
         can("homepage", "read") && { value: "homepage", label: "Homepage" },
         can("store_settings", "read") && { value: "product-cards", label: "Product Cards" },
         can("brands", "read") && { value: "brands", label: "Brands" },
@@ -335,6 +350,9 @@ const StoreSettingsPage = () => {
         <div className="mt-4">
           <Tabs.Content value="integrations">
             <IntegrationSettings />
+          </Tabs.Content>
+          <Tabs.Content value="contact">
+            <ContactSettings />
           </Tabs.Content>
           <Tabs.Content value="homepage">
             <HomepagePage />

@@ -309,9 +309,9 @@ async function loadStore(): Promise<Store> {
   const store: Store = { address: "", email: "", phone: "" }
   try {
     const { setting } = await adminFetch<{ setting: any }>("/store-settings")
-    store.address = setting?.store_address || ""
-    store.email = setting?.store_email || ""
-    // Invoice phone is its own field; fall back to the order phone when it isn't set.
+    // Invoice contact is its own set of fields; each falls back to the footer / order value.
+    store.address = setting?.invoice_address || setting?.store_address || ""
+    store.email = setting?.invoice_email || setting?.store_email || ""
     store.phone = setting?.invoice_phone || setting?.order_phone || ""
   } catch {
     /* editable details are optional — the fixed brand still prints */

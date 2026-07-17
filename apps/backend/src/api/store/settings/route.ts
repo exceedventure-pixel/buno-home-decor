@@ -7,9 +7,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   res.json({
     whatsapp_number: setting?.whatsapp_number ?? null,
     order_phone: setting?.order_phone ?? null,
-    // Footer contact + socials — public, so the storefront can render them without brand.config.
+    // Footer contact + hotline + socials — public, so the storefront can render them.
     store_email: setting?.store_email ?? null,
     store_address: setting?.store_address ?? null,
+    hotline: setting?.hotline ?? null,
     social_links: setting?.social_links ?? null,
   })
 }

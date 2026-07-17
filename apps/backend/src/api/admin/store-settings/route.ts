@@ -6,6 +6,9 @@ const DEFAULTS = {
   whatsapp_number: null,
   order_phone: null,
   invoice_phone: null,
+  invoice_email: null,
+  invoice_address: null,
+  hotline: null,
   store_email: null,
   store_address: null,
   social_links: null,
@@ -35,7 +38,9 @@ const DEFAULTS = {
 
 // Non-secret, admin-editable fields. Secrets (API keys, tokens) live only in env.
 const SIMPLE_KEYS = [
-  "whatsapp_number", "order_phone", "invoice_phone", "store_email", "store_address", "social_links",
+  "whatsapp_number", "order_phone",
+  "invoice_phone", "invoice_email", "invoice_address", "hotline",
+  "store_email", "store_address", "social_links",
   "product_card_style", "product_card_fields",
   "card_button_layout", "card_action_mode", "card_badge_settings",
   "card_text_align", "card_grid_columns",

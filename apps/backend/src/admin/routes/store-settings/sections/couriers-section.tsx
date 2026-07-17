@@ -93,15 +93,18 @@ function CourierControls({ courier, onChanged }: { courier: CourierRow; onChange
   const [pickup, setPickup] = useState<string>((courier.settings?.pickup_address as string) ?? "")
   const disabled = !courier.configured
 
+  // These routes key off the courier SLUG (steadfast/redx/pathao), not the DB row id — the
+  // handler looks the row up by courier_id and checks env vars by slug. Sending courier.id
+  // (the DB id) is what caused "set as active" to 404.
   const activateMutation = useMutation({
-    mutationFn: () => adminFetch(`/couriers/${courier.id}/activate`, { method: "POST" }),
+    mutationFn: () => adminFetch(`/couriers/${courier.courier_id}/activate`, { method: "POST" }),
     onSuccess: () => { toast.success("Set as active courier"); onChanged() },
     onError: (err: Error) => toast.error(err.message || "Activation failed"),
   })
 
   const saveMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      adminFetch(`/couriers/${courier.id}`, { method: "POST", body: JSON.stringify(body) }),
+      adminFetch(`/couriers/${courier.courier_id}`, { method: "POST", body: JSON.stringify(body) }),
     onSuccess: () => { toast.success("Saved"); onChanged() },
     onError: (err: Error) => toast.error(err.message || "Save failed"),
   })
