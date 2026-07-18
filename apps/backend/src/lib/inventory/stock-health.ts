@@ -150,6 +150,7 @@ export async function inspectStockHealth(container: MedusaContainer): Promise<St
       "display_id",
       "canceled_at",
       "items.id",
+      "items.variant_id",
       "items.detail.quantity",
       "items.detail.fulfilled_quantity",
     ],
@@ -158,15 +159,19 @@ export async function inspectStockHealth(container: MedusaContainer): Promise<St
   const unreserved: number[] = []
   for (const o of (openOrders ?? []) as any[]) {
     if (o.canceled_at) continue
-    const outstanding = (o.items ?? []).reduce(
+
+    // Only variant-backed lines reserve stock. Custom and pre-order orders carry NO variant on
+    // their items, so Medusa never reserves them — and they must not be flagged as "unreserved",
+    // because there is nothing to allocate and nothing that can go negative.
+    const stockLines = (o.items ?? []).filter((it: any) => it.variant_id)
+    const outstanding = stockLines.reduce(
       (s: number, it: any) =>
-        s +
-        (Number(it.detail?.quantity ?? 0) - Number(it.detail?.fulfilled_quantity ?? 0)),
+        s + (Number(it.detail?.quantity ?? 0) - Number(it.detail?.fulfilled_quantity ?? 0)),
       0
     )
     if (outstanding <= 0) continue
 
-    const lineIds = (o.items ?? []).map((it: any) => it.id)
+    const lineIds = stockLines.map((it: any) => it.id)
     if (!lineIds.length) continue
     const held = await inventory.listReservationItems({ line_item_id: lineIds })
     if (!(held ?? []).length) unreserved.push(o.display_id)

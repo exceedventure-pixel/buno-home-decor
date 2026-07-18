@@ -108,3 +108,69 @@ export async function bookCourierParcel(
     delivery_charge: result.delivery_charge,
   }
 }
+
+export type RebookCourierResult = BookCourierResult & {
+  old_consignment_id: string
+  old_courier_id: string | null
+  /** Whether the OLD parcel was cancelled via the courier's API. Steadfast has none, so usually
+   *  false — the old consignment must then be cancelled in the courier's portal by hand. */
+  old_cancelled: boolean
+}
+
+/**
+ * REBOOK A PARCEL — the courier never picked it up, or a delivery attempt failed, and we need a
+ * fresh consignment.
+ *
+ * It cancels the OLD parcel with its courier when the adapter supports it (Steadfast's public API
+ * does not, so that stays a portal action — see `old_cancelled`), then books a brand-new
+ * consignment for the same order, overwriting the tracking identity on the workflow.
+ *
+ * The order's STAGE is untouched: a booked-but-not-picked order stays `courier_booked` and will
+ * auto-dispatch on the NEW parcel's pickup; a dispatched order stays dispatched with fresh tracking.
+ */
+export async function rebookCourierParcel(
+  container: MedusaContainer,
+  orderId: string,
+  opts?: { cod_amount?: number; note?: string }
+): Promise<RebookCourierResult> {
+  const logger = container.resolve("logger") as { warn: (m: string) => void }
+  const opSvc: any = container.resolve(ORDER_PROCESSING_MODULE)
+  const [wf] = await opSvc.listOrderWorkflows({ order_id: orderId })
+
+  if (!wf?.consignment_id) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      "This order isn't booked with a courier, so there's nothing to rebook."
+    )
+  }
+
+  const oldConsignment: string = wf.consignment_id
+  const oldCourierId: string | null = wf.courier_id ?? null
+
+  // Best-effort cancel of the OLD parcel with its own courier. When the courier exposes no cancel
+  // (Steadfast), this is a no-op and the caller is told to cancel it in the portal.
+  let oldCancelled = false
+  try {
+    const adapter = oldCourierId ? getCourierAdapter(oldCourierId) : undefined
+    const creds = oldCourierId ? getCourierCreds(oldCourierId) : null
+    if (adapter?.cancelParcel && creds) {
+      await adapter.cancelParcel(oldConsignment, creds)
+      oldCancelled = true
+    }
+  } catch (err: any) {
+    logger.warn(
+      `[courier:rebook] Could not cancel old consignment ${oldConsignment} for ${orderId}: ${err.message}`
+    )
+  }
+
+  // Book a fresh parcel with the active courier. bookCourierParcel overwrites the workflow's
+  // consignment / tracking and resets courier_status to "pending".
+  const result = await bookCourierParcel(container, orderId, opts)
+
+  return {
+    ...result,
+    old_consignment_id: oldConsignment,
+    old_courier_id: oldCourierId,
+    old_cancelled: oldCancelled,
+  }
+}

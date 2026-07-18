@@ -182,6 +182,7 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   // collapsed charge editors — both closed by default so the panel stays compact.
   const [manualOverride, setManualOverride] = useState(false)
   const [chargesOpen, setChargesOpen] = useState(false)
+  const [rebookOpen, setRebookOpen] = useState(false)
 
   const o = data?.order
 
@@ -216,6 +217,33 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
           : "Order updated — stock and cash follow automatically"
       )
       setPending(null)
+      refresh()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  // Rebook: the parcel failed (no pickup / failed delivery). Cancels the old consignment where the
+  // courier allows it and books a fresh one — the order's stage is untouched.
+  const rebook = useMutation({
+    mutationFn: () =>
+      adminFetch<{
+        success: boolean
+        message?: string
+        new_consignment_id?: string
+        old_cancelled?: boolean
+      }>(`/orders/${orderId}/rebook-courier`, { method: "POST" }),
+    onSuccess: (r) => {
+      if (!r.success) {
+        toast.error(r.message || "Rebooking failed")
+        return
+      }
+      toast.success(
+        `Rebooked — new consignment ${r.new_consignment_id}. ` +
+          (r.old_cancelled
+            ? "The old parcel was cancelled."
+            : "Cancel the old parcel in the courier portal.")
+      )
+      setRebookOpen(false)
       refresh()
     },
     onError: (e: Error) => toast.error(e.message),
@@ -298,6 +326,11 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
     ? forwardNext.filter((s) => COURIER_AUTO_STATUSES.includes(s)).slice().sort(sortByPipeline)
     : []
   const showAutoNote =
+    isCourierOrder && (o.order_status === "courier_booked" || o.order_status === "dispatched")
+
+  // Rebook is offered while a courier parcel is live but not yet delivered — i.e. it may still fail
+  // to be picked up or delivered.
+  const canRebook =
     isCourierOrder && (o.order_status === "courier_booked" || o.order_status === "dispatched")
 
   const feeNum = o.courier_cost || 0
@@ -488,11 +521,17 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
         </div>
       )}
 
-      {/* The exits. Not steps on the line, so they don't belong on the timeline. */}
-      {exceptionNext.length > 0 && (
+      {/* The exits. Not steps on the line, so they don't belong on the timeline. Rebook sits here
+          too — the courier failing to pick up or deliver is exactly a "something went wrong". */}
+      {(exceptionNext.length > 0 || canRebook) && (
         <div className="flex flex-col gap-y-2">
           <Label size="small">Something went wrong?</Label>
           <div className="flex flex-wrap gap-1.5">
+            {canRebook && (
+              <Button size="small" variant="secondary" onClick={() => setRebookOpen(true)}>
+                Rebook courier
+              </Button>
+            )}
             {exceptionNext.map((s) => (
               <Button
                 key={s}
@@ -642,6 +681,25 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
             >
               {pending === "courier_booked" ? "Book courier" : "Confirm"}
             </Prompt.Action>
+          </Prompt.Footer>
+        </Prompt.Content>
+      </Prompt>
+
+      {/* Rebook confirm — its own dialog, since it isn't a status change. */}
+      <Prompt open={rebookOpen} onOpenChange={(v) => !v && setRebookOpen(false)}>
+        <Prompt.Content>
+          <Prompt.Header>
+            <Prompt.Title>Rebook with {bookedCourierName}?</Prompt.Title>
+            <Prompt.Description>
+              Books a brand-new parcel for this order (same COD and address). The old consignment{" "}
+              {o.tracking ? `(${o.tracking}) ` : ""}
+              can't be cancelled through Steadfast's API — cancel it in their portal so it isn't
+              picked up twice. The order stays where it is and tracks the new parcel.
+            </Prompt.Description>
+          </Prompt.Header>
+          <Prompt.Footer>
+            <Prompt.Cancel>Cancel</Prompt.Cancel>
+            <Prompt.Action onClick={() => rebook.mutate()}>Rebook courier</Prompt.Action>
           </Prompt.Footer>
         </Prompt.Content>
       </Prompt>
