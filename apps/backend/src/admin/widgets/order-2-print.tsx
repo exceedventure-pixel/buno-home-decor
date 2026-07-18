@@ -178,16 +178,18 @@ function packingBody(order: any, econ: Econ, store: Store, compact: boolean): st
       ? `<div class="cod paidcod"><span>Payment</span><b>PREPAID — collect nothing</b></div>`
       : `<div class="cod"><span>COD to collect</span><b>${money(cod, cur)}</b></div>`
 
-  // Courier's parcel/order id — auto-filled from the courier booking (e.g. Steadfast's
-  // consignment), left as a blank writable line for a manual shipment so it can be hand-written.
-  const orderId = econ?.consignment_id ? esc(econ.consignment_id) : ""
+  // The parcel's hero identifier: the order number. It's what the team matches a parcel against
+  // its picking list, always present, and the single most important thing on the slip — so it's
+  // the biggest, boldest element. The courier's consignment (when booked) rides below it, small.
+  const consignment = econ?.consignment_id ? esc(econ.consignment_id) : ""
 
   return `<section class="doc packing ${compact ? "compact" : ""}">
     ${masthead(store, "Packing Slip", order)}
     <div class="orderid">
       <span class="oid-lbl">Order ID</span>
-      <span class="oid-val">${orderId}</span>
+      <span class="oid-val">#${esc(order.display_id)}</span>
     </div>
+    ${consignment ? `<div class="consign">Consignment <b>${consignment}</b></div>` : ""}
     <div class="shipbig">
       <div class="lbl">Ship to</div>
       <div class="name">${esc(custName(order))}</div>
@@ -224,9 +226,14 @@ const STYLES = `
   .ship { margin-top:14px; }
   .lbl { font-size:10px; text-transform:uppercase; letter-spacing:.6px; color:#999; margin-bottom:3px; }
   .shipto .name, .shipbig .name { font-weight:700; font-size:14px; }
-  .orderid { display:flex; align-items:flex-end; gap:10px; margin-top:14px; }
-  .orderid .oid-lbl { font-size:10px; text-transform:uppercase; letter-spacing:.6px; color:#999; padding-bottom:3px; white-space:nowrap; }
-  .orderid .oid-val { flex:1; border-bottom:1.5px solid #111; min-height:22px; font-family:ui-monospace, "SFMono-Regular", Menlo, monospace; font-weight:700; font-size:14px; padding:0 4px 3px; }
+  /* ORDER ID — the hero of the packing slip: a hard-bordered box with a black label bar and a huge
+     bold number, so it's unmissable when sorting parcels and legible on any printer (no reliance on
+     colour). Deliberately the biggest thing on the page. */
+  .orderid { margin-top:14px; border:2.5px solid #111; border-radius:8px; overflow:hidden; }
+  .orderid .oid-lbl { display:block; background:#111; color:#fff; font-size:10px; letter-spacing:2px; text-transform:uppercase; font-weight:700; text-align:center; padding:3px 0; }
+  .orderid .oid-val { display:block; text-align:center; font-family:ui-monospace, "SFMono-Regular", Menlo, monospace; font-weight:800; font-size:42px; line-height:1.1; padding:8px 10px 10px; }
+  .consign { margin-top:5px; text-align:center; font-size:11px; color:#555; }
+  .consign b { font-family:ui-monospace, "SFMono-Regular", Menlo, monospace; color:#111; letter-spacing:.5px; }
   .shipbig { margin-top:14px; border:1px solid #ddd; border-radius:8px; padding:12px 14px; background:#fafafa; }
   .shipbig .name { font-size:16px; }
   .shipbig .ph { font-size:13px; font-weight:600; }
@@ -265,8 +272,10 @@ const STYLES = `
   .doc.compact table.items th, .doc.compact table.items td { padding:4px 6px; }
   .doc.compact .foot { display:none; }
   .doc.compact .shipbig { padding:8px 10px; margin-top:8px; }
-  .doc.compact .orderid { margin-top:8px; gap:6px; }
-  .doc.compact .orderid .oid-val { min-height:18px; font-size:12px; }
+  .doc.compact .orderid { margin-top:8px; }
+  .doc.compact .orderid .oid-lbl { font-size:9px; padding:2px 0; letter-spacing:1.5px; }
+  .doc.compact .orderid .oid-val { font-size:30px; padding:5px 8px 6px; }
+  .doc.compact .consign { margin-top:3px; font-size:9px; }
   .doc.compact .ship { margin-top:8px; }
 `
 
