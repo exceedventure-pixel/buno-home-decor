@@ -178,18 +178,18 @@ function packingBody(order: any, econ: Econ, store: Store, compact: boolean): st
       ? `<div class="cod paidcod"><span>Payment</span><b>PREPAID — collect nothing</b></div>`
       : `<div class="cod"><span>COD to collect</span><b>${money(cod, cur)}</b></div>`
 
-  // The parcel's hero identifier: the order number. It's what the team matches a parcel against
-  // its picking list, always present, and the single most important thing on the slip — so it's
-  // the biggest, boldest element. The courier's consignment (when booked) rides below it, small.
+  // The parcel's hero identifier: the courier CONSIGNMENT ID — what the courier scans and what the
+  // team routes the parcel by, so it's the biggest, boldest thing on the slip. A manual shipment
+  // has none yet, so the box is left blank and tall enough to hand-write. (Our own order number is
+  // still on the slip, in the masthead.)
   const consignment = econ?.consignment_id ? esc(econ.consignment_id) : ""
 
   return `<section class="doc packing ${compact ? "compact" : ""}">
     ${masthead(store, "Packing Slip", order)}
     <div class="orderid">
-      <span class="oid-lbl">Order ID</span>
-      <span class="oid-val">#${esc(order.display_id)}</span>
+      <span class="oid-lbl">Consignment ID</span>
+      <span class="oid-val">${consignment}</span>
     </div>
-    ${consignment ? `<div class="consign">Consignment <b>${consignment}</b></div>` : ""}
     <div class="shipbig">
       <div class="lbl">Ship to</div>
       <div class="name">${esc(custName(order))}</div>
@@ -226,14 +226,13 @@ const STYLES = `
   .ship { margin-top:14px; }
   .lbl { font-size:10px; text-transform:uppercase; letter-spacing:.6px; color:#999; margin-bottom:3px; }
   .shipto .name, .shipbig .name { font-weight:700; font-size:14px; }
-  /* ORDER ID — the hero of the packing slip: a hard-bordered box with a black label bar and a huge
-     bold number, so it's unmissable when sorting parcels and legible on any printer (no reliance on
-     colour). Deliberately the biggest thing on the page. */
+  /* CONSIGNMENT ID — the hero of the packing slip: a hard-bordered box with a black label bar and a
+     huge bold value, so it's unmissable when sorting parcels and legible on any printer (no reliance
+     on colour). Deliberately the biggest thing on the page. min-height keeps the box writable when a
+     manual shipment has no consignment yet. */
   .orderid { margin-top:14px; border:2.5px solid #111; border-radius:8px; overflow:hidden; }
   .orderid .oid-lbl { display:block; background:#111; color:#fff; font-size:10px; letter-spacing:2px; text-transform:uppercase; font-weight:700; text-align:center; padding:3px 0; }
-  .orderid .oid-val { display:block; text-align:center; font-family:ui-monospace, "SFMono-Regular", Menlo, monospace; font-weight:800; font-size:42px; line-height:1.1; padding:8px 10px 10px; }
-  .consign { margin-top:5px; text-align:center; font-size:11px; color:#555; }
-  .consign b { font-family:ui-monospace, "SFMono-Regular", Menlo, monospace; color:#111; letter-spacing:.5px; }
+  .orderid .oid-val { display:block; text-align:center; font-family:ui-monospace, "SFMono-Regular", Menlo, monospace; font-weight:800; font-size:38px; line-height:1.1; padding:8px 10px 10px; min-height:46px; word-break:break-all; }
   .shipbig { margin-top:14px; border:1px solid #ddd; border-radius:8px; padding:12px 14px; background:#fafafa; }
   .shipbig .name { font-size:16px; }
   .shipbig .ph { font-size:13px; font-weight:600; }
@@ -274,8 +273,7 @@ const STYLES = `
   .doc.compact .shipbig { padding:8px 10px; margin-top:8px; }
   .doc.compact .orderid { margin-top:8px; }
   .doc.compact .orderid .oid-lbl { font-size:9px; padding:2px 0; letter-spacing:1.5px; }
-  .doc.compact .orderid .oid-val { font-size:30px; padding:5px 8px 6px; }
-  .doc.compact .consign { margin-top:3px; font-size:9px; }
+  .doc.compact .orderid .oid-val { font-size:28px; padding:5px 8px 6px; min-height:34px; }
   .doc.compact .ship { margin-top:8px; }
 `
 
