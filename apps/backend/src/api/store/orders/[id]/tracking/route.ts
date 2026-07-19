@@ -17,9 +17,16 @@ const COURIER_NAMES: Record<string, string> = {
   pathao: "Pathao",
 }
 
-// Public tracking-link builders. Verify these formats against each courier's current site.
+/**
+ * Public tracking-link builders. A null result simply omits the link (the component then shows the
+ * tracking code alone).
+ *
+ * Steadfast has none we can build: their real link is `steadfast.com.bd/t/<opaque-token>`, a
+ * per-parcel token their API never returns — it is NOT the tracking code. Deriving it from the code
+ * gave customers a dead link.
+ */
 const TRACK_URL: Record<string, (code: string) => string | null> = {
-  steadfast: (code) => (code ? `https://steadfast.com.bd/t/${encodeURIComponent(code)}` : null),
+  steadfast: () => null,
   redx: (code) => (code ? `https://redx.com.bd/track-global-parcel/?trackingId=${encodeURIComponent(code)}` : null),
   pathao: () => null,
 }

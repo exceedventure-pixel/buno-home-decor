@@ -574,7 +574,7 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
               value={feeNum}
               cur={cur}
               onSave={(v) => saveFee.mutateAsync(v)}
-              help="Set by the courier automatically — a standard charge first, adjusted after the parcel is weighed. Edit only to override."
+              help="Captured automatically only if the courier pushes it to our webhook — Steadfast's status API never returns the charge, so it usually has to be typed. They revise it after weighing (e.g. ৳70 → ৳105), so check it before the books close."
             />
             <ChargeRow
               label="Delivery charged (what the customer pays us)"

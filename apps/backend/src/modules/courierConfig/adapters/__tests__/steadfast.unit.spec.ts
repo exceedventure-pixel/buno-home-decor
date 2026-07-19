@@ -55,3 +55,44 @@ describe("steadfastAdapter.createParcel COD", () => {
     expect(result.delivery_charge).toBe(70)
   })
 })
+
+/**
+ * The status mapping decides when stock leaves and when COD is captured, so it is load-bearing.
+ *
+ * The subtle one is `pending`: Steadfast flips a consignment from `in_review` to `pending` when
+ * they COLLECT it (observed: created 17:28 → pending 22:14 → their warehouses from 00:05), and it
+ * then stays `pending` for the whole journey. Reading `pending` as "awaiting pickup" left shipped
+ * orders stuck at Courier Booked forever, so it must normalise to in_transit.
+ */
+const statusResponse = (delivery_status: string) => ({
+  ok: true,
+  json: async () => ({ status: 200, delivery_status }),
+})
+
+describe("steadfastAdapter.getStatus mapping", () => {
+  const expectStatus = async (raw: string, expected: string) => {
+    global.fetch = jest.fn(async () => statusResponse(raw)) as any
+    await expect(steadfastAdapter.getStatus("c1", creds)).resolves.toBe(expected)
+  }
+
+  it("treats in_review as still awaiting pickup", () => expectStatus("in_review", "pending"))
+
+  it("treats pending as PICKED UP (in transit), so the order auto-dispatches", () =>
+    expectStatus("pending", "in_transit"))
+
+  it("treats hold as in transit — the courier already has the parcel", () =>
+    expectStatus("hold", "in_transit"))
+
+  it("only the final states move cash or stock", async () => {
+    await expectStatus("delivered", "delivered")
+    await expectStatus("returned", "returned")
+    await expectStatus("cancelled", "cancelled")
+  })
+
+  it("does not finalise on approval-pending states", async () => {
+    await expectStatus("delivered_approval_pending", "in_transit")
+    await expectStatus("cancelled_approval_pending", "in_transit")
+  })
+
+  it("falls back to unknown for anything unrecognised", () => expectStatus("weird_new_status", "unknown"))
+})

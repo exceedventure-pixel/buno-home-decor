@@ -34,10 +34,20 @@ function readDeliveryCharge(payload: any): number | undefined {
  * dispatches (stock leaves) but no cash is captured until the status is truly `delivered`.
  */
 const STATUS_MAP: Record<string, NormalizedStatus> = {
-  // Awaiting pickup / on hold with the courier.
-  pending: "pending",
+  // Created and being reviewed — the parcel is still with US, awaiting collection.
   in_review: "pending",
-  hold: "pending",
+  /**
+   * `pending` is Steadfast's PICKUP signal, not "awaiting pickup".
+   *
+   * Observed on a real consignment: created by API at 17:28, flipped to `pending` at 22:14, and
+   * only then moved through their warehouses (MIRPUR 00:05 → TURAG 05:37). It then STAYS `pending`
+   * for the entire journey — their API has no "picked_up"/"in_transit" value and exposes no scan
+   * history. So treating `pending` as "awaiting pickup" meant an order that had physically shipped
+   * sat at Courier Booked forever and never auto-dispatched. It is our in-transit signal.
+   */
+  pending: "in_transit",
+  // Already in their possession, just paused.
+  hold: "in_transit",
   // Out with the courier — moving, but not a final state.
   out_for_delivery: "in_transit",
   partial_delivered: "in_transit",

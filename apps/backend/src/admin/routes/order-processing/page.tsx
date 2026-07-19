@@ -1,11 +1,14 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { ShoppingBag } from "@medusajs/icons"
+import { PencilSquare, ShoppingBag } from "@medusajs/icons"
 import {
   Badge,
   Button,
   Container,
   DropdownMenu,
   Heading,
+  IconButton,
+  Input,
+  Label,
   Prompt,
   Table,
   Text,
@@ -41,12 +44,36 @@ type TypeFilter = "production" | "ready_stock" | "all"
 /** The row + destination awaiting confirmation, so the Prompt can name both. */
 type PendingMove = { orderId: string; displayId: number; to: OrderStatusKey }
 
+/** The row whose courier fee is being set from the queue. */
+type FeeEdit = { orderId: string; displayId: number }
+
 const OrderProcessingPage = () => {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("production")
   const [status, setStatus] = useState<OrderStatusKey | "all">("all")
   const [pending, setPending] = useState<PendingMove | null>(null)
+  // Courier fee is revised after weighing on nearly every parcel, so it's editable straight from
+  // the queue — opening each order to change one number was the whole complaint.
+  const [feeEdit, setFeeEdit] = useState<FeeEdit | null>(null)
+  const [feeDraft, setFeeDraft] = useState("")
   const navigate = useNavigate()
   const qc = useQueryClient()
+
+  const saveFee = useMutation({
+    mutationFn: (v: { orderId: string; fee: number }) =>
+      opApi.update(v.orderId, { courier_fee: v.fee }),
+    onSuccess: () => {
+      toast.success("Courier fee saved — this order's cost and the Cash Book updated")
+      setFeeEdit(null)
+      qc.invalidateQueries({ queryKey: ["order-processing"] })
+      qc.invalidateQueries({ queryKey: ["accounting"] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const openFeeEdit = (orderId: string, displayId: number, current: number) => {
+    setFeeDraft(String(current ?? 0))
+    setFeeEdit({ orderId, displayId })
+  }
 
   /**
    * Moving an order from the queue runs the very same workflow the order page does — it ships
@@ -208,6 +235,7 @@ const OrderProcessingPage = () => {
                 <Table.HeaderCell className="hidden md:table-cell">Issue</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Total</Table.HeaderCell>
                 <Table.HeaderCell className="hidden md:table-cell text-right">Delivery</Table.HeaderCell>
+                <Table.HeaderCell className="text-right">Courier fee</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Net</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Move</Table.HeaderCell>
               </Table.Row>
@@ -264,6 +292,22 @@ const OrderProcessingPage = () => {
                     >
                       {money(r.delivery_margin, cur)}
                     </Table.Cell>
+                    {/* Actual courier charge, set right here. Stop the click: the pencil edits the
+                        fee, it doesn't open the order. */}
+                    <Table.Cell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-x-1">
+                        <span className={r.courier_cost > 0 ? "" : "text-ui-fg-muted"}>
+                          {money(r.courier_cost, cur)}
+                        </span>
+                        <IconButton
+                          size="small"
+                          variant="transparent"
+                          onClick={() => openFeeEdit(r.order_id, r.display_id, r.courier_cost)}
+                        >
+                          <PencilSquare />
+                        </IconButton>
+                      </div>
+                    </Table.Cell>
                     <Table.Cell
                       className={`text-right font-medium ${
                         r.net_profit < 0 ? "text-ui-tag-red-text" : "text-ui-tag-green-text"
@@ -308,7 +352,7 @@ const OrderProcessingPage = () => {
               })}
               {!isLoading && rows.length === 0 && (
                 <Table.Row>
-                  <Table.Cell colSpan={10}>
+                  <Table.Cell colSpan={11}>
                     <Text size="small" className="py-6 text-ui-fg-muted">
                       Nothing in this queue.
                     </Text>
@@ -320,7 +364,7 @@ const OrderProcessingPage = () => {
         </div>
 
         <Text size="xsmall" className="text-ui-fg-muted">
-          Move an order straight from this queue, or open it to flag an issue, set the courier fee
+          Move an order or set its courier fee straight from this queue — open it to flag an issue
           or see its full timeline.
         </Text>
       </Container>
@@ -342,6 +386,50 @@ const OrderProcessingPage = () => {
           <Prompt.Footer>
             <Prompt.Cancel>Cancel</Prompt.Cancel>
             <Prompt.Action onClick={() => pending && move.mutate(pending)}>Confirm</Prompt.Action>
+          </Prompt.Footer>
+        </Prompt.Content>
+      </Prompt>
+
+      {/* Set the actual courier charge without leaving the queue. A plain Save button (not
+          Prompt.Action) so it doesn't auto-close before the save lands. */}
+      <Prompt open={!!feeEdit} onOpenChange={(v) => !v && setFeeEdit(null)}>
+        <Prompt.Content>
+          <Prompt.Header>
+            <Prompt.Title>Courier fee for #{feeEdit?.displayId ?? ""}</Prompt.Title>
+            <Prompt.Description>
+              What the courier actually charged us. They usually revise it after weighing, so this
+              is the figure to correct — it updates this order's cost and the Cash Book.
+            </Prompt.Description>
+          </Prompt.Header>
+
+          <div className="flex flex-col gap-y-2 px-6 pb-2">
+            <Label size="small">Actual charge</Label>
+            <Input
+              type="number"
+              min="0"
+              step="1"
+              autoFocus
+              value={feeDraft}
+              onChange={(e) => setFeeDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && feeEdit && !saveFee.isPending) {
+                  saveFee.mutate({ orderId: feeEdit.orderId, fee: Number(feeDraft) || 0 })
+                }
+              }}
+            />
+          </div>
+
+          <Prompt.Footer>
+            <Prompt.Cancel>Cancel</Prompt.Cancel>
+            <Button
+              size="small"
+              disabled={saveFee.isPending}
+              onClick={() =>
+                feeEdit && saveFee.mutate({ orderId: feeEdit.orderId, fee: Number(feeDraft) || 0 })
+              }
+            >
+              {saveFee.isPending ? "Saving…" : "Save"}
+            </Button>
           </Prompt.Footer>
         </Prompt.Content>
       </Prompt>
