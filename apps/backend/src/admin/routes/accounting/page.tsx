@@ -8,6 +8,7 @@ import { CashBookSection } from "./sections/cash-book-section"
 import { DashboardSection } from "./sections/dashboard-section"
 import { FixedAssetsSection } from "./sections/fixed-assets-section"
 import { MarketingSection } from "./sections/marketing-section"
+import { OrphanWarning } from "../../components/orphan-warning"
 import { OperationalSection } from "./sections/operational-section"
 import { PackagingSection } from "./sections/packaging-section"
 import { PartnersSection } from "./sections/partners-section"
@@ -61,6 +62,9 @@ const AccountingPage = () => {
       </div>
 
       <div className="px-4 py-4 sm:px-6 sm:py-6">
+        {/* Books carrying a deleted order — visible on every tab, because it skews all of them. */}
+        <OrphanWarning />
+
         <Tabs value={tab} onValueChange={setTab}>
           {/* Too many tabs to fit a phone — let the strip scroll sideways instead of the page. */}
           <div className="overflow-x-auto">

@@ -7,6 +7,7 @@ import {
   requireSellableLocation,
 } from "../../../../../lib/inventory/stock-location"
 import { computeOrderEconomics } from "../../../../../lib/orders/order-economics"
+import { purgeOrphanOrderFootprints } from "../../../../../lib/orders/orphan-footprints"
 import { ACCOUNTING_MODULE } from "../../../../../modules/accounting"
 import { ORDER_PROCESSING_MODULE } from "../../../../../modules/orderProcessing"
 
@@ -196,18 +197,28 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     logger?.warn(`[orders:delete] Could not release reservations for ${orderId}: ${err.message}`)
   }
 
-  // 2. Remove the Cash Book rows this order owns.
+  /**
+   * 2. Remove the Cash Book rows this order owns (courier fee + production cost).
+   *
+   * NOT best-effort. These are real ledger entries: if they survive, the P&L keeps charging for an
+   * order that no longer exists — which is exactly how deleted orders went on counting their
+   * production cost. Failing here aborts the delete so the books can never be left half-erased.
+   */
   let ledgerRemoved = 0
-  for (const sourceType of ["order", "production"]) {
-    try {
+  try {
+    for (const sourceType of ["order", "production"]) {
       const rows = await acct.listLedgerEntries({ source_type: sourceType, source_id: orderId })
       if (rows?.length) {
         await acct.deleteLedgerEntries(rows.map((r: any) => r.id))
         ledgerRemoved += rows.length
       }
-    } catch (err: any) {
-      logger?.warn(`[orders:delete] Could not remove ${sourceType} ledger rows: ${err.message}`)
     }
+  } catch (err: any) {
+    throw new MedusaError(
+      MedusaError.Types.UNEXPECTED_STATE,
+      `Could not remove this order's Cash Book rows (${err.message}). Nothing was deleted — the ` +
+        `books would otherwise keep counting it.`
+    )
   }
 
   // 3. Our own rows.
@@ -222,6 +233,20 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   // 4. The order itself. Soft — everything derived stops seeing it immediately.
   await orderModule.softDeleteOrders([orderId])
 
+  // 5. Sweep any footprints stranded by an earlier delete (or by an order removed outside this
+  //    endpoint). Cheap, and it keeps the books self-correcting rather than drifting.
+  let strays = { ledger_rows: 0, workflows: 0, status_events: 0 }
+  try {
+    const swept = await purgeOrphanOrderFootprints(req.scope)
+    strays = {
+      ledger_rows: swept.ledger_rows,
+      workflows: swept.workflows,
+      status_events: swept.status_events,
+    }
+  } catch (err: any) {
+    logger?.warn(`[orders:delete] Orphan sweep failed: ${err.message}`)
+  }
+
   logger?.info(
     `[orders:delete] Order ${orderId} (#${econ.display_id}) deleted by ` +
       `${req.auth_context?.actor_id ?? "unknown"} — ${unitsRestocked} unit(s) restocked, ` +
@@ -235,5 +260,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     units_restocked: unitsRestocked,
     reservations_released: reservationsReleased,
     ledger_rows_removed: ledgerRemoved,
+    strays_swept: strays,
   })
 }

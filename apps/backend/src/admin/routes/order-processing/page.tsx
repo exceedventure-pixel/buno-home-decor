@@ -18,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
+import { OrphanWarning } from "../../components/orphan-warning"
 import { money } from "../../lib/kpi"
 import {
   ISSUE_STATUS_META,
@@ -222,6 +223,9 @@ const OrderProcessingPage = () => {
             />
           </div>
         )}
+
+        {/* Leftovers from orders that no longer exist — they skew this queue's totals too. */}
+        <OrphanWarning />
 
         <div className="overflow-x-auto rounded-lg border border-ui-border-base">
           <Table>
