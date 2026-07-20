@@ -56,7 +56,12 @@ export type RestockInput = {
   variant_id: string
   quantity: number
   unit_cost: number
-  freight?: number
+  /**
+   * Freight PER UNIT — what carrying ONE item cost, not the whole consignment. Suppliers quote it
+   * that way ("30 each"), and it makes the landed cost a plain sum: unit_cost + freight_per_unit.
+   * The batch still stores freight as a TOTAL, which is the honest record of what was paid.
+   */
+  freight_per_unit?: number
   purchase_date?: Date
   supplier?: string | null
   note?: string | null
@@ -84,7 +89,7 @@ export const restockWorkflow = createWorkflow(
 
     const ledgerInput = transform({ input, received }, ({ input, received }) => {
       const goods = Number(input.unit_cost) * Number(input.quantity)
-      const cashOut = goods + Number(input.freight || 0)
+      const cashOut = goods + Number(input.freight_per_unit || 0) * Number(input.quantity)
       return {
         entry_date: input.purchase_date ?? new Date(),
         amount: cashOut,
@@ -98,7 +103,8 @@ export const restockWorkflow = createWorkflow(
       { input, received, ledger },
       ({ input, received, ledger }) => {
         const qty = Number(input.quantity)
-        const cashOut = Number(input.unit_cost) * qty + Number(input.freight || 0)
+        const freightPerUnit = Number(input.freight_per_unit || 0)
+        const freightTotal = freightPerUnit * qty
         return {
           variant_id: input.variant_id,
           inventory_item_id: received.item_id,
@@ -106,8 +112,9 @@ export const restockWorkflow = createWorkflow(
           received_date: input.purchase_date ?? new Date(),
           qty_received: qty,
           unit_cost: Number(input.unit_cost),
-          freight_total: Number(input.freight || 0),
-          landed_unit_cost: qty > 0 ? cashOut / qty : Number(input.unit_cost),
+          // Stored as the TOTAL actually paid; the input was per unit.
+          freight_total: freightTotal,
+          landed_unit_cost: Number(input.unit_cost) + freightPerUnit,
           supplier: input.supplier ?? null,
           note: input.note ?? null,
           source: "restock" as const,

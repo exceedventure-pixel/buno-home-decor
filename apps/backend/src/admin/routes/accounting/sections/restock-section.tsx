@@ -12,6 +12,7 @@ import {
   toast,
 } from "@medusajs/ui"
 
+import { SupplierSelect } from "../../../components/supplier-select"
 import { StockHealthBanner } from "../../../widgets/stock-health-banner"
 import { BatchActions } from "./batch-actions"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -54,9 +55,11 @@ export function RestockSection() {
 
   const qtyNum = Number(quantity)
   const unitNum = Number(unitCost)
+  // Freight is entered PER UNIT: landed cost is a plain sum, and the cash paid scales with qty.
   const freightNum = Number(freight) || 0
-  const cashOut = qtyNum > 0 && unitNum > 0 ? qtyNum * unitNum + freightNum : 0
-  const landed = qtyNum > 0 ? cashOut / qtyNum : 0
+  const freightTotal = freightNum * (qtyNum > 0 ? qtyNum : 0)
+  const cashOut = qtyNum > 0 && unitNum > 0 ? qtyNum * unitNum + freightTotal : 0
+  const landed = unitNum > 0 ? unitNum + freightNum : 0
   const valid =
     !!picked &&
     qtyNum > 0 &&
@@ -82,7 +85,7 @@ export function RestockSection() {
           variant_id: picked!.variant_id,
           quantity: qtyNum,
           unit_cost: unitNum,
-          freight: freightNum,
+          freight_per_unit: freightNum,
           purchase_date: date.toISOString(),
           supplier: supplier || null,
         })
@@ -242,7 +245,7 @@ export function RestockSection() {
             )}
             {mode === "restock" && (
               <div className="flex flex-col gap-y-1">
-                <Label size="small">Freight / extra (BDT)</Label>
+                <Label size="small">Freight / unit (BDT)</Label>
                 <Input
                   type="number"
                   min="0"
@@ -251,6 +254,10 @@ export function RestockSection() {
                   onChange={(e) => setFreight(e.target.value)}
                   placeholder="0"
                 />
+                <Text size="xsmall" className="text-ui-fg-muted">
+                  Per item, not the whole lot
+                  {qtyNum > 0 && freightNum > 0 ? ` · ${money(freightTotal, cur)} total` : ""}
+                </Text>
               </div>
             )}
             {mode === "shrinkage" && (
@@ -275,10 +282,7 @@ export function RestockSection() {
           </div>
 
           {mode === "restock" ? (
-            <div className="flex flex-col gap-y-1">
-              <Label size="small">Supplier (optional)</Label>
-              <Input value={supplier} onChange={(e) => setSupplier(e.target.value)} />
-            </div>
+            <SupplierSelect value={supplier} onChange={setSupplier} label="Supplier (optional)" />
           ) : (
             <div className="flex flex-col gap-y-1">
               <Label size="small">Note (optional)</Label>

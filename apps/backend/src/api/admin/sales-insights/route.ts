@@ -33,6 +33,18 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const gross_profit = product_revenue - cogs
   const delivery_margin = delivery_charged - courier_cost
 
+  /**
+   * Returns. A returned parcel restocks the goods and its revenue is already netted out upstream,
+   * so it costs no COGS — but the courier was still paid to carry it both ways. That courier fee is
+   * the real, easily-missed loss, so it's reported next to the count rather than buried.
+   */
+  const returned_orders = orders.filter((o) => o.units_returned > 0)
+  const returns = {
+    orders: returned_orders.length,
+    units: returned_orders.reduce((s, o) => s + o.units_returned, 0),
+    courier_cost: returned_orders.reduce((s, o) => s + o.courier_cost, 0),
+  }
+
   // Expenses the ledger owns and no order knows about: ads, rent, salaries.
   const acct: any = req.scope.resolve(ACCOUNTING_MODULE)
   const rows = await acct.listLedgerEntries(
@@ -83,6 +95,8 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       other_expense: exp.other_expense,
       refunds: exp.refund,
     },
+
+    returns,
 
     profit: {
       gross_profit,

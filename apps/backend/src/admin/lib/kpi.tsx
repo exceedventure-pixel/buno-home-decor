@@ -1,4 +1,20 @@
-import { Text } from "@medusajs/ui"
+import { InformationCircleSolid } from "@medusajs/icons"
+import { Text, Tooltip } from "@medusajs/ui"
+
+/**
+ * The ⓘ that says how a figure is worked out. Every money tile carries one, because a number
+ * nobody can derive is a number nobody can trust — and these are netted, deduped figures whose
+ * arithmetic is genuinely not obvious (courier sits in delivery margin, production inside COGS).
+ */
+export function KpiInfo({ text }: { text: string }) {
+  return (
+    <Tooltip content={text}>
+      <span className="inline-flex shrink-0 cursor-help text-ui-fg-muted">
+        <InformationCircleSolid />
+      </span>
+    </Tooltip>
+  )
+}
 
 /**
  * The KPI tile shared by Sales Insights and the Accounting dashboard. Hoisted so the two
@@ -10,6 +26,7 @@ export function Kpi({
   hint,
   accent,
   emphasis,
+  info,
 }: {
   label: string
   value: string
@@ -17,6 +34,8 @@ export function Kpi({
   accent?: "green" | "red" | "base"
   /** Headline figures (net worth, working capital) read larger. */
   emphasis?: boolean
+  /** How this figure is calculated — shown from the ⓘ beside the label. */
+  info?: string
 }) {
   const color =
     accent === "green"
@@ -30,9 +49,12 @@ export function Kpi({
     // the track wider than the screen and the whole page scrolls sideways. Value text steps up
     // in size only on larger screens, and breaks rather than overflows on a phone.
     <div className="flex flex-col gap-y-1 rounded-lg border border-ui-border-base p-3 sm:p-4 min-w-0">
-      <Text size="xsmall" className="text-ui-fg-muted break-words">
-        {label}
-      </Text>
+      <div className="flex items-center gap-x-1">
+        <Text size="xsmall" className="text-ui-fg-muted break-words">
+          {label}
+        </Text>
+        {info && <KpiInfo text={info} />}
+      </div>
       <Text
         className={`${
           emphasis ? "text-xl sm:text-2xl" : "text-lg sm:text-xl"

@@ -139,7 +139,7 @@ export function DashboardSection() {
           <Kpi
             label="Operating expenses"
             value={money(p.operating_expenses, cur)}
-            hint="Marketing + other + refunds + packaging + write-offs"
+            hint="packaging + marketing + operational + refunds + stock adj."
             accent="red"
           />
           <Kpi
@@ -149,6 +149,42 @@ export function DashboardSection() {
             accent={p.net_profit >= 0 ? "green" : "red"}
             emphasis
           />
+        </div>
+
+        {/* What MAKES UP operating expenses — under the total, never beside it, so the same taka
+            isn't read twice. Courier fee and production cost are deliberately absent: courier is
+            charged to delivery margin, production sits inside COGS. */}
+        <div className="mt-4 flex flex-col gap-y-2">
+          <Text size="xsmall" className="text-ui-fg-muted">
+            Inside operating expenses — these add up to {money(p.operating_expenses, cur)}
+          </Text>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <Kpi
+              label="Packaging"
+              value={money(p.packaging, cur)}
+              hint="bought in period"
+              accent="red"
+            />
+            <Kpi label="Marketing / ads" value={money(p.marketing, cur)} accent="red" />
+            <Kpi
+              label="Operational"
+              value={money(p.other_expense, cur)}
+              hint="rent, utilities, salaries"
+              accent="red"
+            />
+            <Kpi
+              label="Refunds"
+              value={money(p.refund, cur)}
+              hint="paid outside Medusa"
+              accent={p.refund > 0 ? "red" : "base"}
+            />
+            <Kpi
+              label="Stock adjustments"
+              value={money(p.inventory_adjustments, cur)}
+              hint="write-offs / corrections"
+              accent={p.inventory_adjustments > 0 ? "red" : "base"}
+            />
+          </div>
         </div>
 
         {data.partially_fulfilled_orders > 0 && (

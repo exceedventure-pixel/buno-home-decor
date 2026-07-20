@@ -147,7 +147,8 @@ export const RestockSchema = z
     variant_id: z.string().min(1),
     quantity: z.coerce.number().int().positive(),
     unit_cost: Money,
-    freight: z.coerce.number().finite().min(0).default(0),
+    /** Freight PER UNIT, not for the whole consignment — 5 items at 30 each is 30, not 150. */
+    freight_per_unit: z.coerce.number().finite().min(0).default(0),
     purchase_date: D.optional(),
     supplier: z.string().max(200).nullish(),
     note: z.string().max(500).nullish(),
