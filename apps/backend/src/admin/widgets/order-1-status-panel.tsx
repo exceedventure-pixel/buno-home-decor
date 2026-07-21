@@ -122,10 +122,12 @@ function ChargeRow({
             type="number"
             min="0"
             step="1"
-            className="w-28"
+            className="w-28 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             value={draft}
             autoFocus
             onChange={(e) => setDraft(e.target.value)}
+            // Wheel over a focused number input edits it — blur so the page scrolls instead.
+            onWheel={(e) => (e.target as HTMLInputElement).blur()}
           />
           <Button size="small" onClick={save} isLoading={saving}>
             Save

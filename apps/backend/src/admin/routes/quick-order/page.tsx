@@ -451,6 +451,9 @@ const QuickOrderPage = () => {
                         type="number" min={1}
                         value={String(l.quantity)}
                         onChange={(e) => updateLine(l.key, { quantity: Math.max(1, Number(e.target.value) || 1) })}
+                        // The wheel must scroll the page, not re-price the order.
+                        onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                        className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                       />
                     </label>
                     <label className="flex flex-1 flex-col gap-y-1 sm:w-28 sm:flex-none">
@@ -459,6 +462,10 @@ const QuickOrderPage = () => {
                         type="number" min={0}
                         value={String(l.unit_price)}
                         onChange={(e) => updateLine(l.key, { unit_price: Math.max(0, Number(e.target.value) || 0) })}
+                        // Scrolling the page with the cursor here used to silently change the
+                        // selling price — the worst field in the form to have that happen on.
+                        onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                        className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                       />
                     </label>
                     <Text size="small" className="w-24 pb-2 text-right text-ui-fg-subtle sm:pb-0">

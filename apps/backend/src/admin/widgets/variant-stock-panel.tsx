@@ -118,6 +118,7 @@ function HardAdjust({
               <Label size="small">True count (set stock to)</Label>
               <Input
                 type="number"
+                onWheel={(e) => (e.target as HTMLInputElement).blur()}
                 min="0"
                 step="1"
                 value={target}
@@ -130,6 +131,7 @@ function HardAdjust({
                 <Label size="small">Cost per unit for the {delta} extra (BDT)</Label>
                 <Input
                   type="number"
+                  onWheel={(e) => (e.target as HTMLInputElement).blur()}
                   min="0"
                   step="0.01"
                   value={cost}
@@ -393,6 +395,7 @@ export function VariantStockPanel({ variantId, cur = "bdt" }: { variantId: strin
           <Label size="small">Quantity</Label>
           <Input
             type="number"
+            onWheel={(e) => (e.target as HTMLInputElement).blur()}
             min="1"
             step="1"
             value={quantity}
@@ -405,6 +408,7 @@ export function VariantStockPanel({ variantId, cur = "bdt" }: { variantId: strin
             <Label size="small">Cost / unit</Label>
             <Input
               type="number"
+              onWheel={(e) => (e.target as HTMLInputElement).blur()}
               min="0"
               step="0.01"
               value={unitCost}
@@ -418,6 +422,7 @@ export function VariantStockPanel({ variantId, cur = "bdt" }: { variantId: strin
             <Label size="small">Freight / unit</Label>
             <Input
               type="number"
+              onWheel={(e) => (e.target as HTMLInputElement).blur()}
               min="0"
               step="0.01"
               value={freight}
