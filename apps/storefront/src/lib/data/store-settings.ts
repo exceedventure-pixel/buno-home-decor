@@ -12,6 +12,7 @@ export type StoreContactSettings = {
   whatsapp_number: string | null
   order_phone: string | null
   // Footer contact + hotline + socials, editable in admin. Null → fall back to brand.config.
+  store_phone: string | null
   store_email: string | null
   store_address: string | null
   hotline: string | null
@@ -21,6 +22,7 @@ export type StoreContactSettings = {
 const EMPTY: StoreContactSettings = {
   whatsapp_number: null,
   order_phone: null,
+  store_phone: null,
   store_email: null,
   store_address: null,
   hotline: null,

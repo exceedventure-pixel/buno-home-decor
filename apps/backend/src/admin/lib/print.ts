@@ -37,6 +37,8 @@ type Econ = {
   // Courier shipment, when the order was booked with one (Steadfast etc.). Null for manual.
   consignment_id?: string | null
   courier_id?: string | null
+  /** The order's standing note (order_workflow.note) — delivery instructions and the like. */
+  note?: string | null
 } | null
 
 const custName = (o: any) => {
@@ -119,6 +121,18 @@ function invoiceBody(order: any, econ: Econ, store: Store, compact: boolean): st
   const shipping = Number(order.shipping_total) || 0
   const total = Number(order.total) || 0
 
+  /**
+   * What the customer SAVED. A manual order records its discount by lowering the line prices and
+   * keeping the original in `compare_at_unit_price`, so the saving is the gap between the two —
+   * shown explicitly, because a bill that silently charges less than the list price invites the
+   * question "is this the right price?".
+   */
+  const savedTotal = (order.items || []).reduce((s: number, it: any) => {
+    const was = Number(it.compare_at_unit_price) || 0
+    const now = Number(it.unit_price) || 0
+    return was > now ? s + (was - now) * (Number(it.quantity) || 0) : s
+  }, 0)
+
   return `<section class="doc invoice ${compact ? "compact" : ""}">
     ${masthead(store, "Invoice", order)}
     <div class="ship">
@@ -135,7 +149,12 @@ function invoiceBody(order: any, econ: Econ, store: Store, compact: boolean): st
     </table>
     <div class="tail">
       <div class="totals">
-        <div class="line"><span>Subtotal</span><span>${money(itemTotal, cur)}</span></div>
+        ${
+          savedTotal > 0
+            ? `<div class="line"><span>Subtotal</span><span>${money(itemTotal + savedTotal, cur)}</span></div>
+        <div class="line"><span>Discount</span><span>− ${money(savedTotal, cur)}</span></div>`
+            : `<div class="line"><span>Subtotal</span><span>${money(itemTotal, cur)}</span></div>`
+        }
         <div class="line"><span>Delivery</span><span>${money(shipping, cur)}</span></div>
         <div class="line grand"><span>Total</span><span>${money(total, cur)}</span></div>
       </div>
@@ -171,6 +190,19 @@ function packingBody(order: any, econ: Econ, store: Store, compact: boolean): st
   // still on the slip, in the masthead.)
   const consignment = econ?.consignment_id ? esc(econ.consignment_id) : ""
 
+  /**
+   * Whatever the packer needs to know: the order's standing note ("deliver after 5pm") plus the
+   * note typed when the order was created. Both, because they're written at different moments and
+   * either can carry the instruction that matters — and the packing slip is the one document that
+   * physically travels with the parcel.
+   */
+  const notes = [econ?.note, (order.metadata || {}).manual_note]
+    .map((n) => (n == null ? "" : String(n).trim()))
+    .filter(Boolean)
+  const packNote = notes.length
+    ? `<div class="packnote"><span class="pn-lbl">Note</span>${esc(notes.join(" · "))}</div>`
+    : ""
+
   return `<section class="doc packing ${compact ? "compact" : ""}">
     ${masthead(store, "Packing Slip", order)}
     <div class="orderid">
@@ -188,6 +220,7 @@ function packingBody(order: any, econ: Econ, store: Store, compact: boolean): st
       <thead><tr><th class="chk"></th><th>Item</th><th class="num">Qty</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${packNote}
     <div class="packfoot">
       <span>Packed by ____________</span>
       <span>Checked ____________</span>
@@ -244,6 +277,10 @@ const STYLES = `
   .note { margin-top:12px; font-size:11px; color:#555; }
   .foot { margin-top:20px; text-align:center; color:#999; font-size:10.5px; }
   .packfoot { display:flex; justify-content:space-between; margin-top:22px; font-size:11px; color:#666; }
+  /* Packing note — boxed so a delivery instruction can't be mistaken for part of the item list. */
+  .packnote { margin-top:12px; border:1.5px dashed #111; border-radius:6px; padding:6px 10px; font-size:12px; }
+  .packnote .pn-lbl { display:block; font-size:9px; text-transform:uppercase; letter-spacing:1px; color:#666; }
+  .doc.compact .packnote { margin-top:8px; padding:4px 8px; font-size:10.5px; }
 
   /* Compact = used on the combined page where space is tight. */
   .doc.compact { padding:0; font-size:11px; }
@@ -347,7 +384,7 @@ export type PrintMode = "invoice" | "packing" | "combined" | "a6"
  */
 export async function printOrder(orderId: string, mode: PrintMode): Promise<void> {
   const { order: full } = await adminFetch<{ order: any }>(
-    `/orders/${orderId}?fields=id,display_id,created_at,email,currency_code,payment_status,fulfillment_status,total,item_total,subtotal,shipping_total,metadata,*items,*shipping_address`
+    `/orders/${orderId}?fields=id,display_id,created_at,email,currency_code,payment_status,fulfillment_status,total,item_total,subtotal,shipping_total,discount_total,metadata,*items,*shipping_address`
   )
 
   // Advance / outstanding come from the order-processing economics, the one source that knows

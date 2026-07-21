@@ -133,6 +133,8 @@ export type OrderRow = {
   total: number
   cogs: number
   production_cost: number
+  /** Pre-order/custom freight — inside cogs, next to production_cost. */
+  production_freight: number
   courier_cost: number
   write_off: number
   delivery_margin: number

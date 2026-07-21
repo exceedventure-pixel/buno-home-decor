@@ -87,6 +87,7 @@ type Social = { facebook: string; instagram: string; tiktok: string; youtube: st
 function ContactSettings() {
   const [whatsapp, setWhatsapp] = useState("")
   const [phone, setPhone] = useState("")
+  const [footerPhone, setFooterPhone] = useState("")
   const [footerEmail, setFooterEmail] = useState("")
   const [footerAddress, setFooterAddress] = useState("")
   const [invoicePhone, setInvoicePhone] = useState("")
@@ -102,6 +103,7 @@ function ContactSettings() {
       setting: {
         whatsapp_number: string | null
         order_phone: string | null
+        store_phone: string | null
         store_email: string | null
         store_address: string | null
         invoice_phone: string | null
@@ -114,6 +116,7 @@ function ContactSettings() {
       .then(({ setting }) => {
         setWhatsapp(setting?.whatsapp_number ?? "")
         setPhone(setting?.order_phone ?? "")
+        setFooterPhone(setting?.store_phone ?? "")
         setFooterEmail(setting?.store_email ?? "")
         setFooterAddress(setting?.store_address ?? "")
         setInvoicePhone(setting?.invoice_phone ?? "")
@@ -128,7 +131,7 @@ function ContactSettings() {
           youtube: s.youtube ?? "",
         })
       })
-      .catch(() => toast.error("Failed to load settings"))
+      .catch((e: any) => toast.error(e?.message || "Failed to load settings"))
       .finally(() => setLoading(false))
   }, [])
 
@@ -142,6 +145,7 @@ function ContactSettings() {
         body: JSON.stringify({
           whatsapp_number: whatsapp.trim() || null,
           order_phone: phone.trim() || null,
+          store_phone: footerPhone.trim() || null,
           store_email: footerEmail.trim() || null,
           store_address: footerAddress.trim() || null,
           invoice_phone: invoicePhone.trim() || null,
@@ -157,8 +161,9 @@ function ContactSettings() {
         }),
       })
       toast.success("Settings saved")
-    } catch {
-      toast.error("Failed to save settings")
+    } catch (err: any) {
+      // Show what the server actually said — a swallowed message here is why "it just errors".
+      toast.error(err?.message || "Failed to save settings")
     } finally {
       setSaving(false)
     }
@@ -198,6 +203,7 @@ function ContactSettings() {
         "Footer contact",
         "Email & address shown in the storefront footer.",
         <>
+          {field("Footer Phone", footerPhone, setFooterPhone, "+8801712345678", "The contact number shown in the footer. Leave blank to fall back to the Order Phone above.")}
           {field("Footer Email", footerEmail, setFooterEmail, "hello@yourstore.com")}
           {field("Footer Address", footerAddress, setFooterAddress, "Banktown, Savar, Dhaka 1340, Bangladesh")}
         </>

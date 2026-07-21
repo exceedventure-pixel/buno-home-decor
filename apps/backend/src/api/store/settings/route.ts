@@ -8,6 +8,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     whatsapp_number: setting?.whatsapp_number ?? null,
     order_phone: setting?.order_phone ?? null,
     // Footer contact + hotline + socials — public, so the storefront can render them.
+    store_phone: setting?.store_phone ?? null,
     store_email: setting?.store_email ?? null,
     store_address: setting?.store_address ?? null,
     hotline: setting?.hotline ?? null,

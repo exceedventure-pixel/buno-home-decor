@@ -106,9 +106,11 @@ export default async function Footer() {
   const topLevelCategories = productCategories.filter((c) => !c.parent_category)
 
   // Admin-editable values win; brand.config is the fallback when a field is left blank.
+  // The footer has its own phone, falling back to the order phone so an existing store that never
+  // set one keeps showing a number rather than suddenly showing none.
   const contact = {
     address: settings.store_address || brand.contact.address,
-    phone: settings.order_phone || brand.contact.phone,
+    phone: settings.store_phone || settings.order_phone || brand.contact.phone,
     email: settings.store_email || brand.contact.email,
     hotline: settings.hotline || "",
   }

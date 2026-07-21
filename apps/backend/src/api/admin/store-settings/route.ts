@@ -9,6 +9,7 @@ const DEFAULTS = {
   invoice_email: null,
   invoice_address: null,
   hotline: null,
+  store_phone: null,
   store_email: null,
   store_address: null,
   social_links: null,
@@ -43,7 +44,7 @@ const DEFAULTS = {
 const SIMPLE_KEYS = [
   "whatsapp_number", "order_phone",
   "invoice_phone", "invoice_email", "invoice_address", "hotline",
-  "store_email", "store_address", "social_links",
+  "store_phone", "store_email", "store_address", "social_links",
   "product_card_style", "product_card_fields",
   "card_button_layout", "card_action_mode", "card_badge_settings",
   "card_text_align", "card_grid_columns",

@@ -52,6 +52,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     delivery_charged?: number | null
     advance_amount?: number
     cod_amount?: number
+    /** Freight on a made-to-order item — counted inside this order's cost of goods. */
+    production_freight?: number
     /** The note recorded ON THIS transition — history, tied to the status event. */
     note?: string | null
     /**
@@ -60,6 +62,20 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
      * the timeline and would be lost as soon as the next status change wrote its own.
      */
     order_note?: string | null
+  }
+
+  /**
+   * Freight on a made-to-order item. Stored straight on the workflow rather than going through the
+   * production-cost workflow: that step owns the production_cost ledger row, and freight is a
+   * separate figure the operator enters — it reaches the P&L through cost of goods, which is
+   * derived, so nothing needs re-booking here.
+   */
+  if (body.production_freight !== undefined) {
+    const svc: any = req.scope.resolve(ORDER_PROCESSING_MODULE)
+    const [wf] = await svc.listOrderWorkflows({ order_id: orderId })
+    const value = Math.max(0, Number(body.production_freight) || 0)
+    if (wf) await svc.updateOrderWorkflows([{ id: wf.id, production_freight: value }])
+    else await svc.createOrderWorkflows([{ order_id: orderId, production_freight: value }])
   }
 
   if (body.order_note !== undefined) {

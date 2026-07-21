@@ -93,8 +93,11 @@ const QuickOrderPage = () => {
   // options / money
   const [channelId, setChannelId] = useState("")
   const [delivery, setDelivery] = useState("0")
+  const [discount, setDiscount] = useState("0")
+  const [discountMode, setDiscountMode] = useState<"amount" | "percent">("amount")
   const [advance, setAdvance] = useState("0")
   const [production, setProduction] = useState("0")
+  const [prodFreight, setProdFreight] = useState("0")
   const [note, setNote] = useState("")
 
   // items
@@ -193,12 +196,31 @@ const QuickOrderPage = () => {
   const removeLine = (key: string) => setLines((ls) => ls.filter((l) => l.key !== key))
 
   const itemsTotal = lines.reduce((s, l) => s + l.quantity * l.unit_price, 0)
-  const grandTotal = itemsTotal + (Number(delivery) || 0)
+
+  /**
+   * The discount comes off the ITEMS only — delivery is money paid out to the courier, so
+   * discounting it would quietly eat the delivery margin instead of the product margin.
+   * A percentage is resolved to taka here, so the server only ever receives an amount and the
+   * two can never disagree about rounding.
+   */
+  const discountAmount = Math.min(
+    itemsTotal,
+    Math.max(
+      0,
+      discountMode === "percent"
+        ? Math.round((itemsTotal * (Number(discount) || 0)) / 100)
+        : Number(discount) || 0
+    )
+  )
+  const discountedItems = Math.max(0, itemsTotal - discountAmount)
+
+  const grandTotal = discountedItems + (Number(delivery) || 0)
   const advanceNum = Number(advance) || 0
   const dueAtDelivery = Math.max(0, grandTotal - advanceNum)
   // Pre/custom profit preview: selling price + delivery − production cost. Courier cost isn't
   // known until the order ships, so it's excluded here and settled on the order later.
-  const estProfit = itemsTotal + (Number(delivery) || 0) - (Number(production) || 0)
+  const estProfit =
+    discountedItems + (Number(delivery) || 0) - (Number(production) || 0) - (Number(prodFreight) || 0)
 
   const fmt = (n: number) => `${(n || 0).toLocaleString()} ${currency.toUpperCase()}`
 
@@ -209,6 +231,7 @@ const QuickOrderPage = () => {
     setQuery("")
     setResults([])
     setProduction("0")
+    setProdFreight("0")
   }
 
   const create = async () => {
@@ -251,7 +274,9 @@ const QuickOrderPage = () => {
           shipping: { name: "Delivery", amount: Number(delivery) || 0, shipping_option_id: shipOptId },
           currency_code: currency,
           advance_amount: advanceNum,
+          discount_amount: discountAmount,
           production_cost: isProduction ? Number(production) || 0 : 0,
+          production_freight: isProduction ? Number(prodFreight) || 0 : 0,
           note: note.trim() || undefined,
         }),
       })
@@ -465,6 +490,29 @@ const QuickOrderPage = () => {
               </Select.Content>
             </Select>
           </Field>
+          <Field label="Discount">
+            <div className="flex flex-wrap items-center gap-2">
+              <MoneyInput value={discount} onChange={setDiscount} />
+              <div className="flex gap-1">
+                {(["amount", "percent"] as const).map((m) => (
+                  <Button
+                    key={m}
+                    type="button"
+                    size="small"
+                    variant={discountMode === m ? "primary" : "secondary"}
+                    onClick={() => setDiscountMode(m)}
+                  >
+                    {m === "amount" ? currency.toUpperCase() : "%"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <Text size="xsmall" className="text-ui-fg-muted">
+              Comes off the items, not delivery. Spread across the lines, so revenue and profit
+              reflect what you actually charged.
+              {discountAmount > 0 ? ` Saving ${fmt(discountAmount)}.` : ""}
+            </Text>
+          </Field>
           <Field label={`Delivery charged (${currency.toUpperCase()})`}>
             <MoneyInput
               value={delivery}
@@ -494,6 +542,15 @@ const QuickOrderPage = () => {
               </Text>
             </Field>
           )}
+          {isProduction && (
+            <Field label={`Freight (${currency.toUpperCase()})`}>
+              <MoneyInput value={prodFreight} onChange={setProdFreight} />
+              <Text size="xsmall" className="text-ui-fg-muted">
+                Bringing materials in, or the finished piece out of the workshop. Added to this
+                order's cost of goods — a ready-stock item would carry this on its restock instead.
+              </Text>
+            </Field>
+          )}
         </div>
 
         {/* Profit preview — shows exactly how the order's profit is worked out */}
@@ -518,7 +575,9 @@ const QuickOrderPage = () => {
         <div className="flex items-center justify-between border-t border-ui-border-base pt-4">
           <div className="flex flex-col">
             <Text size="small" className="text-ui-fg-muted">
-              Items {fmt(itemsTotal)} + Delivery {fmt(Number(delivery) || 0)}
+              Items {fmt(itemsTotal)}
+              {discountAmount > 0 ? ` − Discount ${fmt(discountAmount)}` : ""} + Delivery{" "}
+              {fmt(Number(delivery) || 0)}
               {advanceNum > 0 ? ` · Advance ${fmt(advanceNum)} · Due ${fmt(dueAtDelivery)}` : ""}
             </Text>
             <Text className="text-lg font-semibold">Total {fmt(grandTotal)}</Text>

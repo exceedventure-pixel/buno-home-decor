@@ -289,6 +289,15 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
     },
     onError: (e: Error) => toast.error(e.message),
   })
+  const saveProdFreight = useMutation({
+    mutationFn: (v: number) => opApi.update(orderId, { production_freight: v }),
+    onSuccess: () => {
+      toast.success("Freight updated — this order's COGS recalculated")
+      refresh()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
 
   if (isLoading || !o) return null
 
@@ -590,6 +599,15 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
                 cur={cur}
                 onSave={(v) => saveProdCost.mutateAsync(v)}
                 help="What it cost to make. Booked to the Cash Book and used as this order's COGS — the P&L recomputes."
+              />
+            )}
+            {isProduction && (
+              <ChargeRow
+                label="Freight (materials in / finished piece out)"
+                value={o.production_freight || 0}
+                cur={cur}
+                onSave={(v) => saveProdFreight.mutateAsync(v)}
+                help="Made-to-order items never go through a restock, so their freight is recorded here. Counted inside this order's cost of goods next to production."
               />
             )}
           </div>

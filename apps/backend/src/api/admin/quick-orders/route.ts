@@ -51,7 +51,15 @@ type Body = {
   currency_code?: string
   note?: string
   advance_amount?: number | string
+  /**
+   * Money off the ITEMS subtotal (delivery is never discounted — it's a real cost we pay out).
+   * Sent as an absolute amount; a percentage is worked out in the UI so the server only ever
+   * deals in taka and the two can't disagree about rounding.
+   */
+  discount_amount?: number | string
   production_cost?: number | string
+  /** Freight on a made-to-order item — part of its cost of goods. */
+  production_freight?: number | string
 }
 
 function syntheticEmail(phone: string): string {
@@ -118,11 +126,57 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
    * mechanism that stops Medusa reserving or deducting stock for goods that don't exist yet.
    * We keep product_id for identity where we have it, but never the variant.
    */
-  const items = b.items.map((it) => {
-    const base = {
+  const rawItems = b.items.map((it) => ({
+    title: it.title,
+    quantity: Math.max(1, Number(it.quantity) || 1),
+    unit_price: Math.max(0, Number(it.unit_price) || 0),
+    variant_id: it.variant_id,
+    product_id: it.product_id,
+  }))
+
+  /**
+   * A DISCOUNT REDUCES WHAT WE ACTUALLY CHARGED, so it is applied to the line prices themselves
+   * and the original is kept in `compare_at_unit_price`.
+   *
+   * Medusa's order-creation DTO has no line-item `adjustments`, so there is no promotion object to
+   * hang it on. Baking it into the price is not a shortcut — it is the honest option: revenue,
+   * profit and the customer's invoice all reflect the money that changed hands. A discount that
+   * left `item_total` untouched would overstate revenue on every discounted order.
+   *
+   * Spread PROPORTIONALLY across lines, with the rounding remainder pushed onto the largest line
+   * so the discount given is exactly the discount asked for — never a taka more or less.
+   */
+  const subtotal = rawItems.reduce((s, it) => s + it.unit_price * it.quantity, 0)
+  const discount = Math.min(Math.max(0, Number(b.discount_amount) || 0), subtotal)
+
+  const discountByIndex = new Array(rawItems.length).fill(0)
+  if (discount > 0 && subtotal > 0) {
+    let assigned = 0
+    let largest = 0
+    rawItems.forEach((it, i) => {
+      const lineTotal = it.unit_price * it.quantity
+      const share = Math.round((discount * lineTotal) / subtotal)
+      discountByIndex[i] = share
+      assigned += share
+      if (lineTotal > rawItems[largest].unit_price * rawItems[largest].quantity) largest = i
+    })
+    // Rounding drift lands on the biggest line, where it's proportionally smallest.
+    discountByIndex[largest] += discount - assigned
+  }
+
+  const items = rawItems.map((it, i) => {
+    const lineDiscount = discountByIndex[i]
+    const discounted =
+      lineDiscount > 0
+        ? Math.max(0, (it.unit_price * it.quantity - lineDiscount) / it.quantity)
+        : it.unit_price
+
+    const base: Record<string, unknown> = {
       title: it.title,
-      quantity: Math.max(1, Number(it.quantity) || 1),
-      unit_price: Math.max(0, Number(it.unit_price) || 0),
+      quantity: it.quantity,
+      unit_price: discounted,
+      // Keeps the pre-discount price on the order, so the saving stays visible and auditable.
+      ...(lineDiscount > 0 ? { compare_at_unit_price: it.unit_price } : {}),
     }
     if (isReadyStock) {
       return { ...base, variant_id: it.variant_id, product_id: it.product_id }
@@ -177,6 +231,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const orderId = (order as any)?.id
   const advance = Math.max(0, Number(b.advance_amount) || 0)
   const production = Math.max(0, Number(b.production_cost) || 0)
+  const productionFreight = Math.max(0, Number(b.production_freight) || 0)
   const warnings: string[] = []
 
   // Record the order's type + COD intent. Upsert, because the order.placed subscriber may have
@@ -186,11 +241,23 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     const [existing] = await opSvc.listOrderWorkflows({ order_id: orderId })
     if (existing) {
       await opSvc.updateOrderWorkflows([
-        { id: existing.id, order_type: orderType, is_cod: true, advance_amount: advance },
+        {
+          id: existing.id,
+          order_type: orderType,
+          is_cod: true,
+          advance_amount: advance,
+          production_freight: productionFreight,
+        },
       ])
     } else {
       await opSvc.createOrderWorkflows([
-        { order_id: orderId, order_type: orderType, is_cod: true, advance_amount: advance },
+        {
+          order_id: orderId,
+          order_type: orderType,
+          is_cod: true,
+          advance_amount: advance,
+          production_freight: productionFreight,
+        },
       ])
     }
   } catch (e: any) {

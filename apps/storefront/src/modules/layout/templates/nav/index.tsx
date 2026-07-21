@@ -5,8 +5,10 @@ import { listBrands } from "@lib/data/brands"
 import { listLocales } from "@lib/data/locales"
 import { getLocale } from "@lib/data/locale-actions"
 import { listRegions } from "@lib/data/regions"
+import { getStoreSettings } from "@lib/data/store-settings"
 import { StoreRegion } from "@medusajs/types"
 import { ShoppingBag, User } from "@medusajs/icons"
+import { Phone } from "lucide-react"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import CartButton from "@modules/layout/components/cart-button"
 import CategoryBar from "@modules/layout/components/category-bar"
@@ -15,13 +17,17 @@ import SearchBar from "@modules/layout/components/search-bar"
 import BrandLogo from "@modules/common/components/brand-logo"
 
 export default async function Nav() {
-  const [regions, locales, currentLocale, allCategories, brands] = await Promise.all([
+  const [regions, locales, currentLocale, allCategories, brands, settings] = await Promise.all([
     listRegions().then((regions: StoreRegion[]) => regions),
     listLocales(),
     getLocale(),
     listCategories(),
     listBrands(),
+    getStoreSettings(),
   ])
+
+  // The hotline is admin-editable; blank simply hides it.
+  const hotline = settings.hotline || ""
 
   // Top-level only — same filter pattern the footer uses
   const topLevelCategories = allCategories.filter((c) => !c.parent_category)
@@ -73,8 +79,22 @@ export default async function Nav() {
           {/* CENTER: Search bar — desktop only */}
           <SearchBar />
 
-          {/* RIGHT: Store · Cart · Account */}
+          {/* RIGHT: Hotline · Store · Cart · Account */}
           <div className="flex items-center gap-x-6 h-full flex-none">
+            {/* Hotline — the number customers call before they buy, so it belongs in the header
+                rather than only at the bottom of the page. Hidden when none is set, and on small
+                screens where the header has no room (it stays in the footer). */}
+            {hotline && (
+              <a
+                href={`tel:${hotline.replace(/\s+/g, "")}`}
+                className="hidden lg:flex flex-col items-center gap-0.5 hover:text-ui-fg-base"
+                aria-label={`Call our hotline ${hotline}`}
+              >
+                <Phone className="w-5 h-5" />
+                <span className="text-[10px] leading-none">{hotline}</span>
+              </a>
+            )}
+
             {/* Store — desktop only */}
             <div className="hidden lg:flex items-center">
               <LocalizedClientLink

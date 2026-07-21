@@ -59,6 +59,13 @@ const OrderWorkflow = model
      * every edit re-flows through the books because all the figures are derived.
      */
     production_cost: model.bigNumber().default(0),
+    /**
+     * Freight on a made-to-order item — bringing materials in, or the finished piece out of the
+     * workshop. Ready-stock carries its freight on the restock batch's landed cost, but a
+     * pre-order/custom order never goes through a restock, so it had nowhere to record it and the
+     * cost silently vanished. Counted inside this order's cost of goods, alongside production.
+     */
+    production_freight: model.bigNumber().default(0),
 
     /**
      * The delivery amount actually CHARGED to the customer (revenue side). Null means "use

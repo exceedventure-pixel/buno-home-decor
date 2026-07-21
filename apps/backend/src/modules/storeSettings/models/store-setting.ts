@@ -6,7 +6,10 @@ const StoreSetting = model.define("store_setting", {
   order_phone: model.text().nullable(),
   // Shown on printed invoices & packing slips (the store name, tagline and logo are fixed brand
   // assets baked into the print template; these are the parts that change per store).
-  // FOOTER contact — email + address shown in the storefront footer.
+  // FOOTER contact — phone + email + address shown in the storefront footer. The phone is its own
+  // field rather than reusing `order_phone`: the "Call for Order" button and the address block a
+  // customer writes to are not necessarily the same number.
+  store_phone: model.text().nullable(),
   store_email: model.text().nullable(),
   store_address: model.text().nullable(),
   // INVOICE / PACKING contact — printed on documents, kept separate from the footer AND from the

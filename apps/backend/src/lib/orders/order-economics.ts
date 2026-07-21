@@ -56,6 +56,8 @@ export type OrderEconomics = {
   cogs: number
   /** For pre-order/custom: what production cost. (For ready-stock this is 0; COGS is FIFO.) */
   production_cost: number
+  /** For pre-order/custom: freight on the made item. Counted INSIDE cogs, next to production. */
+  production_freight: number
   courier_cost: number
   /** Goods destroyed in transit — a real loss, never restocked. */
   write_off: number
@@ -319,6 +321,12 @@ export async function computeOrderEconomics(
     }
 
     const productionCost = num(wf?.production_cost)
+    /**
+     * Freight on a made-to-order item. Ready-stock gets its freight from the restock batch's
+     * landed cost; a production order has no batch, so it is added to the cost of goods here —
+     * otherwise the money spent shipping it simply never appears in the order's P&L.
+     */
+    const productionFreight = num(wf?.production_freight)
 
     /**
      * COGS depends on the type. Ready-stock draws real inventory, so the cost is what the FIFO
@@ -326,7 +334,7 @@ export async function computeOrderEconomics(
      * the production cost entered on the order.
      */
     const cogs = isProduction
-      ? productionCost
+      ? productionCost + productionFreight
       : mode === "basic"
         ? // Units that actually shipped, at the variant's cost price. Lines with no variant
           // (custom items) never touch inventory and are covered by productionCost above.
@@ -379,6 +387,7 @@ export async function computeOrderEconomics(
 
       cogs,
       production_cost: productionCost,
+      production_freight: productionFreight,
       courier_cost: courierCost,
       write_off: writeOff,
 
