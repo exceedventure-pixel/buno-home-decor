@@ -4,6 +4,7 @@ import { Container, Heading, Tabs, Text } from "@medusajs/ui"
 import { useState } from "react"
 
 import { usePermissions } from "../../lib/permissions"
+import { useSystemMode } from "../../lib/system-mode"
 import { CashBookSection } from "./sections/cash-book-section"
 import { DashboardSection } from "./sections/dashboard-section"
 import { FixedAssetsSection } from "./sections/fixed-assets-section"
@@ -16,6 +17,7 @@ import { RestockSection } from "./sections/restock-section"
 
 const AccountingPage = () => {
   const { can, isLoading } = usePermissions()
+  const { isBasic, isLoading: modeLoading } = useSystemMode()
   const [tab, setTab] = useState("dashboard")
 
   // The API is the real boundary (it 403s), but net worth has no business appearing in the
@@ -24,7 +26,29 @@ const AccountingPage = () => {
   const canAccounting = can("accounting", "read")
   const canMarketing = can("marketing_spend", "read")
 
-  if (isLoading) return null
+  if (isLoading || modeLoading) return null
+
+  /**
+   * Basic mode has no books to show. The sidebar entry stays (Medusa registers nav statically at
+   * build time, so it can't be removed at runtime) — so the page says why it's empty and where to
+   * turn it on, rather than rendering a dashboard of zeros.
+   */
+  if (isBasic) {
+    return (
+      <Container className="flex flex-col gap-y-2 p-8">
+        <Heading level="h1">Accounting is off</Heading>
+        <Text className="text-ui-fg-subtle">
+          This store runs the <b>Basic</b> system: stock is managed the standard Medusa way and
+          there's no Cash Book, FIFO costing or restocking. Sales Insights still reports revenue,
+          cost of goods, delivery margin and profit.
+        </Text>
+        <Text size="small" className="text-ui-fg-muted">
+          To switch on the full accounting system, go to <b>Store Settings → System Mode</b> and
+          roll to Advanced. Rolling resets the store, so it's a deliberate step.
+        </Text>
+      </Container>
+    )
+  }
 
   if (!canAccounting && !canMarketing) {
     return (

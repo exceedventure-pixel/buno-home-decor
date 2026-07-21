@@ -3,22 +3,25 @@ import { PencilSquare, ShoppingBag } from "@medusajs/icons"
 import {
   Badge,
   Button,
+  Checkbox,
   Container,
   DropdownMenu,
   Heading,
   IconButton,
-  Input,
-  Label,
   Prompt,
+  Select,
   Table,
   Text,
+  Textarea,
   toast,
 } from "@medusajs/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
+import { MoneyInput } from "../../components/money-input"
 import { OrphanWarning } from "../../components/orphan-warning"
+import { printOrder, type PrintMode } from "../../lib/print"
 import { money } from "../../lib/kpi"
 import {
   ISSUE_STATUS_META,
@@ -48,10 +51,43 @@ type PendingMove = { orderId: string; displayId: number; to: OrderStatusKey }
 /** The row whose courier fee is being set from the queue. */
 type FeeEdit = { orderId: string; displayId: number }
 
+/** The row whose standing note is being edited. */
+type NoteEdit = { orderId: string; displayId: number }
+
+/**
+ * The steps offered as BULK actions, in pipeline order.
+ *
+ * Deliberately forward-only: cancelling, returning or refunding in bulk is a different kind of
+ * decision (it moves money back and restocks goods), and a mis-click there is not recoverable by
+ * doing it again. Those stay per-order.
+ */
+const BULK_STEPS: OrderStatusKey[] = [
+  "confirmed",
+  "in_production",
+  "ready_to_dispatch",
+  "courier_booked",
+  "dispatched",
+  "delivered",
+]
+
+const BULK_LABEL: Partial<Record<OrderStatusKey, string>> = {
+  confirmed: "Confirm all",
+  in_production: "Start production for all",
+  ready_to_dispatch: "Mark all ready",
+  courier_booked: "Book all with courier",
+  dispatched: "Mark all dispatched",
+  delivered: "Mark all delivered",
+}
+
 const OrderProcessingPage = () => {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("production")
   const [status, setStatus] = useState<OrderStatusKey | "all">("all")
   const [pending, setPending] = useState<PendingMove | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkTo, setBulkTo] = useState<OrderStatusKey | null>(null)
+  const [noteEdit, setNoteEdit] = useState<NoteEdit | null>(null)
+  const [noteDraft, setNoteDraft] = useState("")
+  const [printing, setPrinting] = useState<string | null>(null)
   // Courier fee is revised after weighing on nearly every parcel, so it's editable straight from
   // the queue — opening each order to change one number was the whole complaint.
   const [feeEdit, setFeeEdit] = useState<FeeEdit | null>(null)
@@ -76,6 +112,28 @@ const OrderProcessingPage = () => {
     setFeeEdit({ orderId, displayId })
   }
 
+  const saveNote = useMutation({
+    mutationFn: (v: { orderId: string; note: string }) =>
+      opApi.update(v.orderId, { order_note: v.note }),
+    onSuccess: () => {
+      toast.success("Note saved")
+      setNoteEdit(null)
+      qc.invalidateQueries({ queryKey: ["order-processing"] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const print = async (orderId: string, mode: PrintMode) => {
+    setPrinting(orderId)
+    try {
+      await printOrder(orderId, mode)
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to build the document")
+    } finally {
+      setPrinting(null)
+    }
+  }
+
   /**
    * Moving an order from the queue runs the very same workflow the order page does — it ships
    * goods and moves cash. So it gets the same confirmation, spelling out what will happen.
@@ -85,6 +143,47 @@ const OrderProcessingPage = () => {
     onSuccess: () => {
       toast.success("Order updated — stock and cash follow automatically")
       setPending(null)
+      qc.invalidateQueries({ queryKey: ["order-processing"] })
+      qc.invalidateQueries({ queryKey: ["orders"] })
+      qc.invalidateQueries({ queryKey: ["accounting"] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  /**
+   * BULK MOVE — the same guarded workflow, once per order.
+   *
+   * Sequential, not parallel: each move ships goods or moves cash, and firing thirty of them at
+   * once makes a failure impossible to attribute and hammers the same rows. One order failing
+   * (a guard refusing, no stock) must not stop the rest, so every result is collected and
+   * reported together rather than throwing on the first problem.
+   */
+  const bulk = useMutation({
+    mutationFn: async (to: OrderStatusKey) => {
+      const targets = rows.filter((r) => selected.has(r.order_id))
+      let moved = 0
+      const failed: { displayId: number; message: string }[] = []
+      for (const r of targets) {
+        try {
+          await opApi.update(r.order_id, { order_status: to })
+          moved++
+        } catch (e: any) {
+          failed.push({ displayId: r.display_id, message: e?.message ?? "failed" })
+        }
+      }
+      return { moved, failed }
+    },
+    onSuccess: ({ moved, failed }) => {
+      if (moved) toast.success(`${moved} order(s) updated — stock and cash follow automatically`)
+      if (failed.length) {
+        toast.error(
+          `${failed.length} could not move: ` +
+            failed.slice(0, 3).map((f) => `#${f.displayId} (${f.message})`).join("; ") +
+            (failed.length > 3 ? "…" : "")
+        )
+      }
+      setBulkTo(null)
+      setSelected(new Set())
       qc.invalidateQueries({ queryKey: ["order-processing"] })
       qc.invalidateQueries({ queryKey: ["orders"] })
       qc.invalidateQueries({ queryKey: ["accounting"] })
@@ -127,6 +226,36 @@ const OrderProcessingPage = () => {
     () => (status === "all" ? typeRows : typeRows.filter((r) => r.order_status === status)),
     [typeRows, status]
   )
+
+  /**
+   * A bulk step is offered only when EVERY selected order can legally take it. Offering a step
+   * that half the selection would refuse turns one click into a pile of error toasts, and leaves
+   * the user unsure which orders actually moved.
+   */
+  const selectedRows = useMemo(
+    () => rows.filter((r) => selected.has(r.order_id)),
+    [rows, selected]
+  )
+  const bulkSteps = useMemo(() => {
+    if (!selectedRows.length) return [] as OrderStatusKey[]
+    const tally = new Map<OrderStatusKey, number>()
+    for (const r of selectedRows) {
+      for (const s of r.allowed_next) tally.set(s, (tally.get(s) ?? 0) + 1)
+    }
+    return BULK_STEPS.filter((s) => tally.get(s) === selectedRows.length)
+  }, [selectedRows])
+
+  // Selecting rows then changing the filter would otherwise act on orders you can no longer see.
+  const visibleIds = useMemo(() => rows.map((r) => r.order_id), [rows])
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
+  const toggleAll = () =>
+    setSelected(allVisibleSelected ? new Set() : new Set(visibleIds))
+  const toggleOne = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
 
   // Totals follow whatever is on screen, so the money always matches the rows below it.
   const t = useMemo(() => {
@@ -227,21 +356,55 @@ const OrderProcessingPage = () => {
         {/* Leftovers from orders that no longer exist — they skew this queue's totals too. */}
         <OrphanWarning />
 
+        {/* Bulk bar — only the steps every selected order can actually take. */}
+        {selectedRows.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-ui-border-strong bg-ui-bg-subtle p-3">
+            <Text size="small" weight="plus">
+              {selectedRows.length} selected
+            </Text>
+            <Button size="small" variant="transparent" onClick={() => setSelected(new Set())}>
+              Clear
+            </Button>
+            <div className="ml-auto flex flex-wrap gap-1.5">
+              {bulkSteps.length === 0 ? (
+                <Text size="xsmall" className="text-ui-fg-muted">
+                  No step is available to all of these — they're at different stages.
+                </Text>
+              ) : (
+                bulkSteps.map((s) => (
+                  <Button key={s} size="small" variant="secondary" onClick={() => setBulkTo(s)}>
+                    {BULK_LABEL[s] ?? ORDER_STATUS_META[s].label}
+                  </Button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto rounded-lg border border-ui-border-base">
           <Table>
             <Table.Header>
               <Table.Row>
+                <Table.HeaderCell className="w-10">
+                  <Checkbox
+                    checked={allVisibleSelected}
+                    onCheckedChange={toggleAll}
+                    aria-label="Select all"
+                  />
+                </Table.HeaderCell>
                 <Table.HeaderCell>Order</Table.HeaderCell>
                 <Table.HeaderCell className="hidden lg:table-cell">Type</Table.HeaderCell>
                 <Table.HeaderCell>Customer</Table.HeaderCell>
                 <Table.HeaderCell>Status</Table.HeaderCell>
+                <Table.HeaderCell>Courier</Table.HeaderCell>
                 <Table.HeaderCell className="hidden sm:table-cell">Payment</Table.HeaderCell>
                 <Table.HeaderCell className="hidden md:table-cell">Issue</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Total</Table.HeaderCell>
                 <Table.HeaderCell className="hidden md:table-cell text-right">Delivery</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Courier fee</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Net</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Move</Table.HeaderCell>
+                <Table.HeaderCell className="hidden lg:table-cell">Notes</Table.HeaderCell>
+                <Table.HeaderCell className="text-right">Print</Table.HeaderCell>
               </Table.Row>
             </Table.Header>
             <Table.Body>
@@ -257,6 +420,14 @@ const OrderProcessingPage = () => {
                     // page load here costs a re-boot of the whole admin.
                     onClick={() => navigate(`/orders/${r.order_id}`)}
                   >
+                    {/* Selecting a row must not open it. */}
+                    <Table.Cell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selected.has(r.order_id)}
+                        onCheckedChange={() => toggleOne(r.order_id)}
+                        aria-label={`Select order ${r.display_id}`}
+                      />
+                    </Table.Cell>
                     <Table.Cell className="whitespace-nowrap font-medium">
                       #{r.display_id}
                     </Table.Cell>
@@ -266,10 +437,72 @@ const OrderProcessingPage = () => {
                       </Badge>
                     </Table.Cell>
                     <Table.Cell className="max-w-[140px] truncate sm:max-w-[180px]">{r.customer}</Table.Cell>
-                    <Table.Cell>
-                      <Badge size="2xsmall" color={os.color}>
-                        {os.label}
-                      </Badge>
+                    {/* Status is a dropdown, not a badge plus a separate "Move" menu: the thing you
+                        want to change and the thing showing its value are the same control. */}
+                    <Table.Cell onClick={(e) => e.stopPropagation()}>
+                      {r.allowed_next.length === 0 ? (
+                        <Badge size="2xsmall" color={os.color}>
+                          {os.label}
+                        </Badge>
+                      ) : (
+                        <Select
+                          value={r.order_status}
+                          onValueChange={(v) =>
+                            setPending({
+                              orderId: r.order_id,
+                              displayId: r.display_id,
+                              to: v as OrderStatusKey,
+                            })
+                          }
+                        >
+                          <Select.Trigger className="min-w-[150px]">
+                            <Select.Value />
+                          </Select.Trigger>
+                          <Select.Content>
+                            {/* Where it is now — shown so the trigger has a label, not offered. */}
+                            <Select.Item value={r.order_status} disabled>
+                              {os.label}
+                            </Select.Item>
+                            {r.allowed_next.map((s) => (
+                              <Select.Item key={s} value={s}>
+                                {ORDER_STATUS_META[s].label}
+                              </Select.Item>
+                            ))}
+                          </Select.Content>
+                        </Select>
+                      )}
+                    </Table.Cell>
+
+                    {/* Courier: book it, or show the parcel once booked. */}
+                    <Table.Cell onClick={(e) => e.stopPropagation()}>
+                      {r.consignment_id ? (
+                        <div className="flex flex-col">
+                          <Text size="xsmall" className="font-mono">
+                            {r.tracking || r.consignment_id}
+                          </Text>
+                          <Text size="xsmall" className="text-ui-fg-muted">
+                            {r.courier_status ?? "pending"}
+                          </Text>
+                        </div>
+                      ) : r.allowed_next.includes("courier_booked") ? (
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          onClick={() =>
+                            setPending({
+                              orderId: r.order_id,
+                              displayId: r.display_id,
+                              to: "courier_booked",
+                            })
+                          }
+                        >
+                          Book courier
+                        </Button>
+                      ) : (
+                        <Text size="xsmall" className="text-ui-fg-muted">
+                          —
+                        </Text>
+                      )}
                     </Table.Cell>
                     <Table.Cell className="hidden sm:table-cell">
                       <Badge size="2xsmall" color={ps.color}>
@@ -319,44 +552,58 @@ const OrderProcessingPage = () => {
                     >
                       {money(r.net_profit, cur)}
                     </Table.Cell>
+                    {/* Standing note — the "deliver after 5pm" kind, not transition history. */}
+                    <Table.Cell
+                      className="hidden lg:table-cell max-w-[200px]"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-x-1">
+                        <Text size="xsmall" className="truncate text-ui-fg-subtle">
+                          {r.note || "—"}
+                        </Text>
+                        <IconButton
+                          size="small"
+                          variant="transparent"
+                          onClick={() => {
+                            setNoteDraft(r.note ?? "")
+                            setNoteEdit({ orderId: r.order_id, displayId: r.display_id })
+                          }}
+                        >
+                          <PencilSquare />
+                        </IconButton>
+                      </div>
+                    </Table.Cell>
+
                     {/* Stop the click here: this cell acts on the row, it doesn't open it. */}
                     <Table.Cell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      {r.allowed_next.length > 0 ? (
-                        <DropdownMenu>
-                          <DropdownMenu.Trigger asChild>
-                            <Button size="small" variant="secondary">
-                              Move…
-                            </Button>
-                          </DropdownMenu.Trigger>
-                          <DropdownMenu.Content>
-                            {r.allowed_next.map((s) => (
-                              <DropdownMenu.Item
-                                key={s}
-                                onClick={() =>
-                                  setPending({
-                                    orderId: r.order_id,
-                                    displayId: r.display_id,
-                                    to: s,
-                                  })
-                                }
-                              >
-                                {ORDER_STATUS_META[s].label}
-                              </DropdownMenu.Item>
-                            ))}
-                          </DropdownMenu.Content>
-                        </DropdownMenu>
-                      ) : (
-                        <Text size="xsmall" className="text-ui-fg-muted">
-                          —
-                        </Text>
-                      )}
+                      <DropdownMenu>
+                        <DropdownMenu.Trigger asChild>
+                          <Button size="small" variant="secondary" disabled={printing === r.order_id}>
+                            {printing === r.order_id ? "…" : "Print"}
+                          </Button>
+                        </DropdownMenu.Trigger>
+                        <DropdownMenu.Content>
+                          <DropdownMenu.Item onClick={() => print(r.order_id, "invoice")}>
+                            Invoice
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item onClick={() => print(r.order_id, "packing")}>
+                            Packing slip
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item onClick={() => print(r.order_id, "combined")}>
+                            Combined A4
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item onClick={() => print(r.order_id, "a6")}>
+                            A6 packing slip
+                          </DropdownMenu.Item>
+                        </DropdownMenu.Content>
+                      </DropdownMenu>
                     </Table.Cell>
                   </Table.Row>
                 )
               })}
               {!isLoading && rows.length === 0 && (
                 <Table.Row>
-                  <Table.Cell colSpan={11}>
+                  <Table.Cell colSpan={14}>
                     <Text size="small" className="py-6 text-ui-fg-muted">
                       Nothing in this queue.
                     </Text>
@@ -394,6 +641,69 @@ const OrderProcessingPage = () => {
         </Prompt.Content>
       </Prompt>
 
+      {/* Bulk confirm — names the count and spells out what the step actually does. */}
+      <Prompt open={!!bulkTo} onOpenChange={(v) => !v && setBulkTo(null)}>
+        <Prompt.Content>
+          <Prompt.Header>
+            <Prompt.Title>
+              {bulkTo
+                ? `${BULK_LABEL[bulkTo] ?? ORDER_STATUS_META[bulkTo].label} — ${selectedRows.length} order(s)?`
+                : ""}
+            </Prompt.Title>
+            <Prompt.Description>
+              {(bulkTo && TRANSITION_EFFECT[bulkTo]) ??
+                "Records the stage. Nothing moves in stock or cash."}{" "}
+              This runs once per order; any that can't move are reported and the rest still go
+              through.
+            </Prompt.Description>
+          </Prompt.Header>
+          <Prompt.Footer>
+            <Prompt.Cancel>Cancel</Prompt.Cancel>
+            <Button
+              size="small"
+              disabled={bulk.isPending}
+              onClick={() => bulkTo && bulk.mutate(bulkTo)}
+            >
+              {bulk.isPending ? `Working… ` : `Move ${selectedRows.length}`}
+            </Button>
+          </Prompt.Footer>
+        </Prompt.Content>
+      </Prompt>
+
+      {/* Standing note on the order. */}
+      <Prompt open={!!noteEdit} onOpenChange={(v) => !v && setNoteEdit(null)}>
+        <Prompt.Content>
+          <Prompt.Header>
+            <Prompt.Title>Note on #{noteEdit?.displayId ?? ""}</Prompt.Title>
+            <Prompt.Description>
+              A standing note that stays on the order — delivery instructions, a customer request.
+              It isn't part of the status history.
+            </Prompt.Description>
+          </Prompt.Header>
+          <div className="px-6 pb-2">
+            <Textarea
+              autoFocus
+              rows={3}
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              placeholder="e.g. Customer asked to deliver after 5pm"
+            />
+          </div>
+          <Prompt.Footer>
+            <Prompt.Cancel>Cancel</Prompt.Cancel>
+            <Button
+              size="small"
+              disabled={saveNote.isPending}
+              onClick={() =>
+                noteEdit && saveNote.mutate({ orderId: noteEdit.orderId, note: noteDraft })
+              }
+            >
+              {saveNote.isPending ? "Saving…" : "Save note"}
+            </Button>
+          </Prompt.Footer>
+        </Prompt.Content>
+      </Prompt>
+
       {/* Set the actual courier charge without leaving the queue. A plain Save button (not
           Prompt.Action) so it doesn't auto-close before the save lands. */}
       <Prompt open={!!feeEdit} onOpenChange={(v) => !v && setFeeEdit(null)}>
@@ -407,19 +717,12 @@ const OrderProcessingPage = () => {
           </Prompt.Header>
 
           <div className="flex flex-col gap-y-2 px-6 pb-2">
-            <Label size="small">Actual charge</Label>
-            <Input
-              type="number"
-              min="0"
-              step="1"
-              autoFocus
+            <MoneyInput
+              label="Actual charge"
               value={feeDraft}
-              onChange={(e) => setFeeDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && feeEdit && !saveFee.isPending) {
-                  saveFee.mutate({ orderId: feeEdit.orderId, fee: Number(feeDraft) || 0 })
-                }
-              }}
+              onChange={setFeeDraft}
+              presets={[100, 150]}
+              hint="Couriers usually revise this after weighing the parcel."
             />
           </div>
 

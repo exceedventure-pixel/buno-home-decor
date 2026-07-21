@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { ShoppingBag, Trash, Plus } from "@medusajs/icons"
 import { Badge, Button, Container, Heading, Input, Label, Select, Text, toast } from "@medusajs/ui"
 import { useEffect, useState } from "react"
+import { MoneyInput } from "../../components/money-input"
 
 async function adminFetch<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const token =
@@ -465,11 +466,12 @@ const QuickOrderPage = () => {
             </Select>
           </Field>
           <Field label={`Delivery charged (${currency.toUpperCase()})`}>
-            <Input type="number" min={0} value={delivery} onChange={(e) => setDelivery(e.target.value)} />
-            <Text size="xsmall" className="text-ui-fg-muted">
-              Shipment charge billed to the customer — revenue. What the courier costs you is set
-              on the order later.
-            </Text>
+            <MoneyInput
+              value={delivery}
+              onChange={setDelivery}
+              presets={[100, 150]}
+              hint="Shipment charge billed to the customer — revenue. What the courier costs you is set on the order later."
+            />
           </Field>
           <Field label="Note (optional)">
             <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Internal note" />
@@ -479,14 +481,14 @@ const QuickOrderPage = () => {
         {/* Payment + production */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-ui-border-base pt-4">
           <Field label={`Advance paid now (${currency.toUpperCase()})`}>
-            <Input type="number" min={0} value={advance} onChange={(e) => setAdvance(e.target.value)} />
+            <MoneyInput value={advance} onChange={setAdvance} />
             <Text size="xsmall" className="text-ui-fg-muted">
               Optional. The rest is Cash on Delivery, collected when you mark it Delivered.
             </Text>
           </Field>
           {isProduction && (
             <Field label={`Production cost (${currency.toUpperCase()})`}>
-              <Input type="number" min={0} value={production} onChange={(e) => setProduction(e.target.value)} />
+              <MoneyInput value={production} onChange={setProduction} />
               <Text size="xsmall" className="text-ui-fg-muted">
                 What it costs you to make. This is the order's cost of goods — editable later.
               </Text>

@@ -2,7 +2,9 @@ import type { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 import { computeFifoCosting } from "../insights/fifo-costing"
+import { getSystemMode } from "../store/system-mode"
 import { ORDER_PROCESSING_MODULE } from "../../modules/orderProcessing"
+import { PRODUCT_COST_MODULE } from "../../modules/productCost"
 import {
   derivePaymentStatus,
   resolveOrderStatus,
@@ -76,6 +78,8 @@ export type OrderEconomics = {
   /** Normalised courier status (pending | in_transit | delivered | returned | cancelled). */
   courier_status: string | null
   consignment_id: string | null
+  /** The order's STANDING note (order_workflow.note) — not transition history. */
+  note: string | null
   /** COD amount handed to the courier to collect. */
   cod_amount: number
   /** The courier's own delivery charge, once captured from its API (else null). */
@@ -102,8 +106,29 @@ export async function computeOrderEconomics(
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const opSvc: any = container.resolve(ORDER_PROCESSING_MODULE)
 
-  // FIFO gives us the exact cost of the goods each order actually drew.
+  /**
+   * WHERE COST OF GOODS COMES FROM depends on the system mode.
+   *
+   *   advanced — FIFO: the exact cost of the batches each order actually drew.
+   *   basic    — there are no batches, so cost is the variant's single cost price × units shipped.
+   *
+   * Without this, a basic-mode store would compute COGS of ZERO for every order (nothing to draw
+   * from) and report its entire revenue as profit.
+   */
+  const mode = await getSystemMode(container)
   const fifo = await computeFifoCosting(container)
+
+  // Basic mode only: variant_id -> cost price.
+  const simpleCost = new Map<string, number>()
+  if (mode === "basic") {
+    try {
+      const costSvc: any = container.resolve(PRODUCT_COST_MODULE)
+      const rows = await costSvc.listVariantCosts({}, { take: 200000 })
+      for (const r of rows ?? []) simpleCost.set(r.variant_id, Number(r.cost) || 0)
+    } catch {
+      // No cost prices set yet — COGS reads 0, which the Sales Insights hint calls out.
+    }
+  }
 
   const workflows = await opSvc.listOrderWorkflows({}, { take: 100000 })
   const wfByOrder = new Map<string, any>(workflows.map((w: any) => [w.order_id, w]))
@@ -300,7 +325,18 @@ export async function computeOrderEconomics(
      * batches say. Pre-order/custom never touch inventory (no batch to draw from) — the cost is
      * the production cost entered on the order.
      */
-    const cogs = isProduction ? productionCost : (fifo.cogs_by_ref.get(o.id) ?? 0)
+    const cogs = isProduction
+      ? productionCost
+      : mode === "basic"
+        ? // Units that actually shipped, at the variant's cost price. Lines with no variant
+          // (custom items) never touch inventory and are covered by productionCost above.
+          (o.items ?? []).reduce(
+            (s: number, it: any) =>
+              s +
+              num(it.detail?.fulfilled_quantity) * (simpleCost.get(it.variant_id) ?? 0),
+            0
+          )
+        : (fifo.cogs_by_ref.get(o.id) ?? 0)
     const courierCost = num(wf?.courier_fee)
 
     /**
@@ -359,6 +395,7 @@ export async function computeOrderEconomics(
       courier_id: courierId,
       courier_status: courierStatus,
       consignment_id: consignmentId,
+      note: wf?.note ?? null,
       cod_amount: num(wf?.cod_amount),
       actual_delivery_charge:
         wf?.actual_delivery_charge != null ? num(wf.actual_delivery_charge) : null,

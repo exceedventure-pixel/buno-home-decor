@@ -2,6 +2,8 @@ import type { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
 import { computeFifoCosting } from "../insights/fifo-costing"
+import { getSystemMode } from "../store/system-mode"
+import { PRODUCT_COST_MODULE } from "../../modules/productCost"
 import { getCanonicalLocation } from "./stock-location"
 
 /**
@@ -41,6 +43,54 @@ export type StockHealth = {
   healthy: boolean
   location: { id: string; name: string } | null
   issues: HealthIssue[]
+}
+
+/**
+ * THE BASIC-MODE EQUIVALENT OF "UNCOSTED STOCK".
+ *
+ * Basic has no batches, so cost of goods is `units shipped × the variant's cost price`. A variant
+ * with stock but no cost price therefore reports its entire revenue as profit — silently, and on
+ * every sale it makes.
+ *
+ * This is not hypothetical: rolling between systems zeroes every cost price (stock is zeroed with
+ * it, so there is nothing left to cost), which means a freshly rolled basic store starts in exactly
+ * this state and needs telling.
+ */
+async function missingCostPriceIssues(container: MedusaContainer): Promise<HealthIssue[]> {
+  const query = container.resolve(ContainerRegistrationKeys.QUERY)
+  const costSvc: any = container.resolve(PRODUCT_COST_MODULE)
+
+  const { data: variants } = await query.graph({
+    entity: "product_variant",
+    fields: ["id", "title", "sku", "manage_inventory", "product.title"],
+  })
+  const live = (variants ?? []) as any[]
+  if (!live.length) return []
+
+  const rows = await costSvc.listVariantCosts({}, { take: 200000 })
+  const costOf = new Map<string, number>(
+    (rows ?? []).map((r: any) => [r.variant_id, Number(r.cost) || 0])
+  )
+
+  const missing = live
+    .filter((v) => v.manage_inventory !== false && (costOf.get(v.id) ?? 0) <= 0)
+    .map((v) => (v.product?.title ? `${v.product.title} — ${v.title}` : (v.sku ?? v.title ?? v.id)))
+
+  if (!missing.length) return []
+
+  return [
+    {
+      code: "uncosted_stock",
+      message:
+        `${missing.length} variant(s) have NO cost price: ` +
+        `${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "…" : ""}. Their cost of goods ` +
+        `counts as ৳0, so every sale of them reports its full revenue as profit.`,
+      fix_where:
+        "Open the product (or variant) and set Cost price on the Stock & cost panel. Rolling " +
+        "between systems clears cost prices, so a freshly rolled store always needs these set.",
+      blocking: false,
+    },
+  ]
 }
 
 export async function inspectStockHealth(container: MedusaContainer): Promise<StockHealth> {
@@ -262,6 +312,22 @@ export async function inspectStockHealth(container: MedusaContainer): Promise<St
   }
 
   const fifo = await computeFifoCosting(container)
+
+  /**
+   * EVERYTHING BELOW IS A FIFO CONCEPT, so it only applies to the advanced system.
+   *
+   * In basic mode there are no cost batches by design, which would make every unit ever shipped
+   * "uncosted" — a permanent, unclearable alarm telling the user to "restock those products"
+   * through a flow that doesn't exist in their system. The basic equivalent (a variant with no
+   * cost price) is checked instead.
+   */
+  if ((await getSystemMode(container)) === "basic") {
+    return {
+      healthy: issues.length === 0,
+      location: location ? { id: location.id, name: location.name } : null,
+      issues: [...issues, ...(await missingCostPriceIssues(container))],
+    }
+  }
 
   /**
    * 5) Sold with stock tracking OFF. Not drift — there's no shelf to disagree with. But those

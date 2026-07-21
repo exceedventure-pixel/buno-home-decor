@@ -15,6 +15,8 @@ import {
 } from "../../lib/order-processing-api"
 
 type Insights = {
+  /** Basic has no Cash Book, so the ledger-derived cards are omitted rather than shown as ৳0. */
+  system_mode: "basic" | "advanced"
   currency_code: string
   order_count: number
   revenue: { product: number; delivery_charged: number; total: number }
@@ -156,6 +158,9 @@ const SalesInsightsPage = () => {
   })
 
   const cur = data?.currency_code ?? "bdt"
+  // Basic mode keeps no Cash Book, so the ledger-derived cards are hidden rather than shown as ৳0
+  // — which would claim you spent nothing on overheads instead of that you aren't tracking them.
+  const advanced = data?.system_mode !== "basic"
 
   return (
     <div className="flex flex-col gap-y-4 p-4">
@@ -163,9 +168,10 @@ const SalesInsightsPage = () => {
         <div>
           <Heading level="h1">Sales Insights</Heading>
           <Text size="small" className="text-ui-fg-subtle mt-1">
-            Built from each order's real P&amp;L — what the goods cost (FIFO), what the box cost,
-            and what the courier charged. A busy store can still lose money on every parcel; this
-            is where you'd see it.
+            Built from each order's real P&amp;L — what the goods cost
+            {advanced ? " (FIFO)" : ""}, and what the courier charged. A busy store can still lose
+            money on every parcel; this is where you'd see it.
+            {!advanced && " Overheads aren't included — this store runs the Basic system."}
           </Text>
         </div>
 
@@ -246,7 +252,11 @@ const SalesInsightsPage = () => {
                 hint={`${data.profit.net_margin_pct.toFixed(1)}% margin`}
                 accent={data.profit.net_profit >= 0 ? "green" : "red"}
                 emphasis
-                info="Gross profit + delivery overcharge + other income − written-off goods − overheads. Courier fee and production cost are NOT subtracted again here: courier already sits in the delivery overcharge, production already inside cost of goods."
+                info={
+                  advanced
+                    ? "Gross profit + delivery overcharge + other income − written-off goods − overheads. Courier fee and production cost are NOT subtracted again here: courier already sits in the delivery overcharge, production already inside cost of goods."
+                    : "Gross profit + delivery overcharge − written-off goods. This store runs the Basic system, so there is no Cash Book: overheads like rent, salaries and ads are NOT deducted, and profit reads higher than the business's true bottom line."
+                }
               />
             </div>
 
@@ -271,17 +281,20 @@ const SalesInsightsPage = () => {
                 accent={data.costs.write_off > 0 ? "red" : "base"}
                 info="Goods destroyed in transit. They are NOT restocked — written off at cost — so the loss is the goods' cost with no revenue against it."
               />
-              <Kpi
-                label="Overheads"
-                value={money(data.costs.overhead, cur)}
-                hint="packaging + marketing + operational + refunds"
-                accent="red"
-                info="Every ledger expense in the period MINUS courier fee and production cost. Those two are excluded because courier is already charged to delivery margin and production is already inside cost of goods — counting them here would double-charge."
-              />
+              {advanced && (
+                <Kpi
+                  label="Overheads"
+                  value={money(data.costs.overhead, cur)}
+                  hint="packaging + marketing + operational + refunds"
+                  accent="red"
+                  info="Every ledger expense in the period MINUS courier fee and production cost. Those two are excluded because courier is already charged to delivery margin and production is already inside cost of goods — counting them here would double-charge."
+                />
+              )}
             </div>
 
             {/* The four parts that MAKE UP overheads. Courier fee and production cost are
                 deliberately absent: courier is charged to delivery margin, production to COGS. */}
+            {advanced && (
             <div className="flex flex-col gap-y-2">
               <Text size="xsmall" className="text-ui-fg-muted">
                 Inside overheads — these four add up to {money(data.costs.overhead, cur)}
@@ -316,6 +329,7 @@ const SalesInsightsPage = () => {
                 />
               </div>
             </div>
+            )}
 
             {/* Returns, and the gross delivery figure behind the overcharge. */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -362,13 +376,15 @@ const SalesInsightsPage = () => {
                 accent="red"
                 info="Money refunded through Medusa on these orders. Already netted out of revenue and cash, so it is NOT subtracted a second time in net profit. Refunds paid outside Medusa are the separate 'Refunds' card in overheads."
               />
-              <Kpi
-                label="Other income"
-                value={money(data.profit.other_income, cur)}
-                hint="courier compensation, scrap"
-                accent="green"
-                info="Income-class ledger entries in the period that aren't product sales — courier compensation for a damaged parcel, scrap sales, and similar. Added on top of net profit."
-              />
+              {advanced && (
+                <Kpi
+                  label="Other income"
+                  value={money(data.profit.other_income, cur)}
+                  hint="courier compensation, scrap"
+                  accent="green"
+                  info="Income-class ledger entries in the period that aren't product sales — courier compensation for a damaged parcel, scrap sales, and similar. Added on top of net profit."
+                />
+              )}
             </div>
 
             {/* Issues */}

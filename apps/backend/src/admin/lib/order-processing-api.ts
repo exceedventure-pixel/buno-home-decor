@@ -146,6 +146,8 @@ export type OrderRow = {
   courier_id: string | null
   courier_status: string | null
   consignment_id: string | null
+  /** Standing note on the order — editable from the queue. */
+  note: string | null
   cod_amount: number
   actual_delivery_charge: number | null
   /** What this row may legally move to next — type-aware, computed server-side. */

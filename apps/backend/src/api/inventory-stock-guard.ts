@@ -4,6 +4,8 @@ import {
   MedusaResponse,
 } from "@medusajs/framework/http"
 
+import { getSystemMode } from "../lib/store/system-mode"
+
 /**
  * Closes the last way stock could drift away from the books.
  *
@@ -43,13 +45,23 @@ const sets = (o: any, key: string): boolean =>
 
 const nonZero = (v: unknown): boolean => Number(v) !== 0
 
-export function inventoryStockGuard(
+export async function inventoryStockGuard(
   req: MedusaRequest,
   res: MedusaResponse,
   next: MedusaNextFunction
 ) {
   try {
     if (process.env.INVENTORY_GUARD === "false") return next()
+
+    /**
+     * BASIC mode has no batches to protect, so stock is edited the plain Medusa way — this guard
+     * only exists to defend FIFO cost layers, and there are none.
+     *
+     * Fails OPEN (falls back to "basic" = allow) on a settings read error. That's safe rather than
+     * lax: the only realistic failure is the database being unreachable, in which case the
+     * inventory write this guard is protecting would fail on its own anyway.
+     */
+    if ((await getSystemMode(req.scope, "basic")) === "basic") return next()
 
     const path = ((req as any).originalUrl || req.url || req.path).split("?")[0]
     const body: any = req.body ?? {}

@@ -2,6 +2,7 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/
 
 import { pnlExpenses, pnlIncome } from "../../../lib/accounting/ledger-math"
 import { monthStart } from "../../../lib/insights/sales-metrics"
+import { getSystemMode } from "../../../lib/store/system-mode"
 import { computeOrderEconomics } from "../../../lib/orders/order-economics"
 import { ACCOUNTING_MODULE } from "../../../modules/accounting"
 
@@ -45,12 +46,19 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     courier_cost: returned_orders.reduce((s, o) => s + o.courier_cost, 0),
   }
 
-  // Expenses the ledger owns and no order knows about: ads, rent, salaries.
+  /**
+   * Expenses the ledger owns and no order knows about: ads, rent, salaries.
+   *
+   * BASIC mode has no Cash Book, so there is nothing to read — every ledger-derived figure stays
+   * zero and the page hides those cards rather than showing ৳0, which would claim you spent
+   * nothing on overheads rather than that you aren't tracking them.
+   */
+  const mode = await getSystemMode(req.scope)
   const acct: any = req.scope.resolve(ACCOUNTING_MODULE)
-  const rows = await acct.listLedgerEntries(
-    { entry_date: { $gte: from, $lte: to } },
-    { take: 100000 }
-  )
+  const rows =
+    mode === "advanced"
+      ? await acct.listLedgerEntries({ entry_date: { $gte: from, $lte: to } }, { take: 100000 })
+      : []
   const exp = pnlExpenses(rows)
   const other_income = pnlIncome(rows)
 
@@ -76,6 +84,8 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
   res.json({
     range: { from: from.toISOString(), to: to.toISOString() },
+    // Tells the page which ledger-derived cards it may render.
+    system_mode: mode,
     currency_code: orders[0]?.currency_code ?? "bdt",
     order_count: orders.length,
 

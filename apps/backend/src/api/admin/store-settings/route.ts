@@ -34,6 +34,9 @@ const DEFAULTS = {
   sms_provider: null,
   sms_api_url: null,
   payment_enabled: null,
+  // A store with no settings row yet is a fresh install → basic. Existing rows were backfilled to
+  // "advanced" by the migration.
+  system_mode: "basic",
 }
 
 // Non-secret, admin-editable fields. Secrets (API keys, tokens) live only in env.
@@ -52,6 +55,9 @@ const SIMPLE_KEYS = [
   "sms_sender_id", "sms_provider", "sms_api_url",
   // Per-provider payment enable toggles (json map)
   "payment_enabled",
+  // `system_mode` is deliberately NOT here. Changing it flips the whole system's behaviour and is
+  // only valid alongside the store reset that clears the other mode's data, so it may only be
+  // changed through POST /admin/system-mode/roll — never a plain settings save.
 ] as const
 
 function withConfigured(setting: Record<string, unknown>) {

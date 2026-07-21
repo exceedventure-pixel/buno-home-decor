@@ -46,6 +46,19 @@ const StoreSetting = model.define("store_setting", {
   // Per-provider payment enable toggles, e.g. { stripe: true, sslcommerz: false }.
   // The provider must also be configured (env) and enabled per-region to appear at checkout.
   payment_enabled: model.json().nullable(),
+  /**
+   * WHICH SHAPE OF THE SYSTEM THIS STORE RUNS.
+   *
+   *   basic    — default Medusa: stock quantity typed up and down, one cost price per variant,
+   *              no Cash Book, no FIFO batches, no restock flow. Sales Insights still works.
+   *   advanced — Cash Book, partners, fixed assets, marketing, FIFO cost layers and suppliers.
+   *
+   * New installs start `basic`; the migration backfills existing stores to `advanced`, because
+   * they are already running it and must not change underneath anyone. Switching is a deliberate
+   * "roll" that RESETS the store (see api/admin/system-mode) — the modes are never mixed, which is
+   * what keeps stock from existing with no cost layer behind it.
+   */
+  system_mode: model.enum(["basic", "advanced"]).default("basic"),
 })
 
 export default StoreSetting

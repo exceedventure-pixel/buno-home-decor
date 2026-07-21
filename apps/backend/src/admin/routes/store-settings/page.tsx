@@ -37,6 +37,7 @@ import { NotificationsSection } from "./sections/notifications-section"
 import { StorageSection } from "./sections/storage-section"
 import { ErrorLogSection } from "./sections/error-log-section"
 import { DangerZoneSection } from "./sections/danger-zone-section"
+import { SystemModeSection } from "./sections/system-mode-section"
 
 // ── Collapsible category wrapper ───────────────────────────────────────────────
 
@@ -276,6 +277,14 @@ function IntegrationSettings() {
 
       <CategorySection title="Error Log" description="Errors customers hit on the storefront" icon={ExclamationCircle}>
         <ErrorLogSection />
+      </CategorySection>
+
+      <CategorySection
+        title="System Mode"
+        description="Run the simple system or the full accounting one"
+        icon={AdjustmentsDone}
+      >
+        <SystemModeSection />
       </CategorySection>
 
       <CategorySection title="Danger Zone" description="Hard reset inventory, orders, and customer data" icon={Trash}>

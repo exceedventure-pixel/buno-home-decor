@@ -52,7 +52,22 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     delivery_charged?: number | null
     advance_amount?: number
     cod_amount?: number
+    /** The note recorded ON THIS transition — history, tied to the status event. */
     note?: string | null
+    /**
+     * The order's STANDING note — a persistent scratchpad on the order itself ("customer asked to
+     * deliver after 5pm"). Deliberately separate from `note` above, which belongs to one moment in
+     * the timeline and would be lost as soon as the next status change wrote its own.
+     */
+    order_note?: string | null
+  }
+
+  if (body.order_note !== undefined) {
+    const svc: any = req.scope.resolve(ORDER_PROCESSING_MODULE)
+    const [wf] = await svc.listOrderWorkflows({ order_id: orderId })
+    const value = (body.order_note ?? "").trim() || null
+    if (wf) await svc.updateOrderWorkflows([{ id: wf.id, note: value }])
+    else await svc.createOrderWorkflows([{ order_id: orderId, note: value }])
   }
 
   if (body.courier_fee !== undefined) {

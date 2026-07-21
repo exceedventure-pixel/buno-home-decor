@@ -3,7 +3,9 @@ import { Container, Heading, Label, Select, Text } from "@medusajs/ui"
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
 
+import { SimpleCostPanel } from "../components/simple-cost-panel"
 import { money } from "../lib/kpi"
+import { useSystemMode } from "../lib/system-mode"
 import { stockApi } from "../lib/stock-api"
 import { StockHealthBanner } from "./stock-health-banner"
 import { VariantStockPanel } from "./variant-stock-panel"
@@ -30,6 +32,7 @@ const ProductCostWidget = ({ data: product }: { data: { id: string } }) => {
     queryFn: () => stockApi.listCosts(product.id),
   })
 
+  const { isBasic } = useSystemMode()
   const rows = data?.variant_costs ?? []
   const [selectedId, setSelectedId] = useState<string>("")
 
@@ -48,8 +51,17 @@ const ProductCostWidget = ({ data: product }: { data: { id: string } }) => {
       <div>
         <Heading level="h2">Stock &amp; cost</Heading>
         <Text size="small" className="text-ui-fg-subtle mt-1">
-          <b>Cost</b> is set per batch when you restock — the figure shown is your latest batch's
-          landed cost. Sales draw down the oldest batch first (FIFO).
+          {isBasic ? (
+            <>
+              <b>Cost</b> is a single price per variant, used as this product's cost of goods.
+              Quantity is edited in Medusa's own stock section.
+            </>
+          ) : (
+            <>
+              <b>Cost</b> is set per batch when you restock — the figure shown is your latest
+              batch's landed cost. Sales draw down the oldest batch first (FIFO).
+            </>
+          )}
         </Text>
       </div>
 
@@ -69,7 +81,7 @@ const ProductCostWidget = ({ data: product }: { data: { id: string } }) => {
               option is just noise. */}
           {rows.length > 1 && (
             <div className="flex flex-col gap-y-1">
-              <Label size="small">Variant to restock / adjust</Label>
+              <Label size="small">{isBasic ? "Variant" : "Variant to restock / adjust"}</Label>
               <Select value={selectedId} onValueChange={setSelectedId}>
                 <Select.Trigger>
                   <Select.Value placeholder="Choose a variant" />
@@ -101,7 +113,7 @@ const ProductCostWidget = ({ data: product }: { data: { id: string } }) => {
                 </div>
                 <div className="flex flex-col gap-y-1">
                   <Label size="small" className="text-ui-fg-muted">
-                    Cost / unit (last batch)
+                    {isBasic ? "Cost / unit" : "Cost / unit (last batch)"}
                   </Label>
                   <Text size="small" className="text-right font-medium tabular-nums">
                     {money(selected.cost, cur)}
@@ -110,12 +122,17 @@ const ProductCostWidget = ({ data: product }: { data: { id: string } }) => {
               </div>
 
               {/* Keyed so switching variant resets the form rather than carrying a half-typed
-                  restock across to a different variant. */}
-              <VariantStockPanel
-                key={selected.variant_id}
-                variantId={selected.variant_id}
-                cur={cur}
-              />
+                  restock across to a different variant. Basic mode has no batches to manage, so it
+                  gets the plain cost-price panel instead. */}
+              {isBasic ? (
+                <SimpleCostPanel key={selected.variant_id} variantId={selected.variant_id} cur={cur} />
+              ) : (
+                <VariantStockPanel
+                  key={selected.variant_id}
+                  variantId={selected.variant_id}
+                  cur={cur}
+                />
+              )}
             </div>
           )}
         </div>
