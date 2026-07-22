@@ -109,12 +109,22 @@ export const NEXT_ACTION_LABEL: Record<OrderStatusKey, string> = {
 
 /** What each status change will actually DO — shown in the confirmation, so nobody is surprised. */
 export const TRANSITION_EFFECT: Partial<Record<OrderStatusKey, string>> = {
+  new_order: "Puts the order back at the start of the line. Nothing moves in stock or cash.",
+  confirmed:
+    "Accepts the order and reserves its stock, so the goods are held for this customer. No cash moves and nothing ships yet.",
+  in_production: "Marks it as being made. A record only — no stock or cash moves.",
+  ready_to_dispatch:
+    "Marks it packed and waiting to go. A record only — the goods are still on your shelf.",
+  courier_booked:
+    "Books the parcel with your active courier and stores the consignment. Stock does NOT move yet — it dispatches automatically when the courier reports pickup.",
   dispatched:
     "Creates the fulfilment: stock leaves the shelf and cost of goods is booked (FIFO).",
   delivered: "Captures the outstanding payment — the cash the courier collected lands in the books.",
-  returned: "Creates and receives a return: the goods go back on the shelf and their COGS reverses.",
+  returned:
+    "Creates and receives a return: the goods go back on the shelf and their COGS reverses. The courier fee stays a real cost, and any cash you collected only counts as revenue until you record the refund.",
   cancelled:
     "If nothing shipped, releases the stock reservation. If it already went out, this is an RTO — the goods come back, but the courier fee is still a real cost.",
+  on_hold: "Pauses the order where it is. Nothing moves; it rejoins the line where it left off.",
   refunded: "Refunds the captured payment — money goes back to the customer.",
 }
 

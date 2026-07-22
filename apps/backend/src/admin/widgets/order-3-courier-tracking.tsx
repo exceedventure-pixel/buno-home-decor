@@ -1,6 +1,6 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import type { DetailWidgetProps, HttpTypes } from "@medusajs/framework/types"
-import { Badge, Button, Container, Prompt, Text, toast } from "@medusajs/ui"
+import { Badge, Button, Container, Prompt, Text, Tooltip, toast } from "@medusajs/ui"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 
@@ -175,15 +175,23 @@ function TrackingWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>
               ? "This order was returned — items have been restocked."
               : "If the parcel came back, record the return to restock inventory. No refund is issued."}
           </Text>
-          <Button
-            size="small"
-            variant="secondary"
-            disabled={busy || alreadyReturned}
-            isLoading={busy}
-            onClick={() => setPromptOpen(true)}
+          <Tooltip
+            content={
+              alreadyReturned
+                ? "Already returned — the goods are back on the shelf."
+                : "The parcel came back. Puts the shipped units back into stock and reverses their cost of goods. The courier fee stays a real cost, and no refund is issued — record that separately if you gave the money back."
+            }
           >
-            {alreadyReturned ? "Returned" : "Mark returned & restock"}
-          </Button>
+            <Button
+              size="small"
+              variant="secondary"
+              disabled={busy || alreadyReturned}
+              isLoading={busy}
+              onClick={() => setPromptOpen(true)}
+            >
+              {alreadyReturned ? "Returned" : "Mark returned & restock"}
+            </Button>
+          </Tooltip>
         </div>
       )}
 

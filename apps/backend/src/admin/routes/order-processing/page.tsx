@@ -13,6 +13,7 @@ import {
   Table,
   Text,
   Textarea,
+  Tooltip,
   toast,
 } from "@medusajs/ui"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -372,9 +373,14 @@ const OrderProcessingPage = () => {
                 </Text>
               ) : (
                 bulkSteps.map((s) => (
-                  <Button key={s} size="small" variant="secondary" onClick={() => setBulkTo(s)}>
-                    {BULK_LABEL[s] ?? ORDER_STATUS_META[s].label}
-                  </Button>
+                  <Tooltip
+                    key={s}
+                    content={`${TRANSITION_EFFECT[s] ?? ORDER_STATUS_META[s].label} Runs once per selected order.`}
+                  >
+                    <Button size="small" variant="secondary" onClick={() => setBulkTo(s)}>
+                      {BULK_LABEL[s] ?? ORDER_STATUS_META[s].label}
+                    </Button>
+                  </Tooltip>
                 ))
               )}
             </div>
@@ -485,19 +491,21 @@ const OrderProcessingPage = () => {
                           </Text>
                         </div>
                       ) : r.allowed_next.includes("courier_booked") ? (
-                        <Button
-                          size="small"
-                          variant="secondary"
-                          onClick={() =>
-                            setPending({
-                              orderId: r.order_id,
-                              displayId: r.display_id,
-                              to: "courier_booked",
-                            })
-                          }
-                        >
-                          Book courier
-                        </Button>
+                        <Tooltip content={TRANSITION_EFFECT.courier_booked ?? "Books the parcel."}>
+                          <Button
+                            size="small"
+                            variant="secondary"
+                            onClick={() =>
+                              setPending({
+                                orderId: r.order_id,
+                                displayId: r.display_id,
+                                to: "courier_booked",
+                              })
+                            }
+                          >
+                            Book courier
+                          </Button>
+                        </Tooltip>
                       ) : (
                         <Text size="xsmall" className="text-ui-fg-muted">
                           —
@@ -578,9 +586,15 @@ const OrderProcessingPage = () => {
                     <Table.Cell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenu.Trigger asChild>
-                          <Button size="small" variant="secondary" disabled={printing === r.order_id}>
-                            {printing === r.order_id ? "…" : "Print"}
-                          </Button>
+                          <Tooltip content="Print this order's invoice, packing slip, the combined A4, or the A6 parcel slip.">
+                            <Button
+                              size="small"
+                              variant="secondary"
+                              disabled={printing === r.order_id}
+                            >
+                              {printing === r.order_id ? "…" : "Print"}
+                            </Button>
+                          </Tooltip>
                         </DropdownMenu.Trigger>
                         <DropdownMenu.Content>
                           <DropdownMenu.Item onClick={() => print(r.order_id, "invoice")}>

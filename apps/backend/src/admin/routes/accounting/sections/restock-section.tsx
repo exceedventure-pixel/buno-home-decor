@@ -11,6 +11,7 @@ import {
   Table,
   Text,
   Textarea,
+  Tooltip,
   toast,
 } from "@medusajs/ui"
 
@@ -326,12 +327,16 @@ export function RestockSection() {
           </Text>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="small" onClick={() => setRestockOpen(true)}>
-            Restock…
-          </Button>
-          <Button size="small" variant="secondary" onClick={() => setAdjustOpen(true)}>
-            Found / Write-off…
-          </Button>
+          <Tooltip content="Record a purchase: raises each product's stock, creates its FIFO cost batch, and books the cash you paid. Several products at once.">
+            <Button size="small" onClick={() => setRestockOpen(true)}>
+              Restock…
+            </Button>
+          </Tooltip>
+          <Tooltip content="Corrections, not purchases — no cash moves. Found adds a cost layer for stock you already had; Write-off removes stock at its FIFO cost.">
+            <Button size="small" variant="secondary" onClick={() => setAdjustOpen(true)}>
+              Found / Write-off…
+            </Button>
+          </Tooltip>
         </div>
       </div>
 

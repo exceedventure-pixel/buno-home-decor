@@ -23,7 +23,18 @@ export async function returnAndRestockOrder(
 
   const { data: orders } = await query.graph({
     entity: "order",
-    fields: ["id", "status", "items.id", "items.quantity", "returns.id"],
+    fields: [
+      "id",
+      "status",
+      "items.id",
+      // Quantities live on the line item's DETAIL, not on the item itself. Reading `items.quantity`
+      // returned undefined, so every line was filtered out and a perfectly returnable parcel
+      // reported "no returnable items" — the whole reason returns appeared broken.
+      "items.detail.quantity",
+      "items.detail.fulfilled_quantity",
+      "items.detail.return_received_quantity",
+      "returns.id",
+    ],
     filters: { id: orderId },
   })
   const order = orders?.[0]
@@ -32,11 +43,29 @@ export async function returnAndRestockOrder(
   if (order.status === "canceled") return { created: false, items: 0, reason: "Order is canceled" }
   if ((order.returns ?? []).length > 0) return { created: false, items: 0, reason: "Order already has a return" }
 
+  /**
+   * Return what actually SHIPPED and hasn't come back yet.
+   *
+   * Ordered quantity is the wrong basis: a part-shipped order would try to return units that never
+   * left the shelf, and restocking those would invent stock. Fulfilled-minus-already-returned is
+   * the true figure, and it works the same whether the parcel is merely dispatched or delivered —
+   * both have units out with the customer or the courier.
+   */
   const items = (order.items ?? [])
-    .filter((i: any) => Number(i.quantity) > 0)
-    .map((i: any) => ({ id: i.id, quantity: Number(i.quantity) }))
+    .map((i: any) => {
+      const fulfilled = Number(i.detail?.fulfilled_quantity ?? 0)
+      const alreadyBack = Number(i.detail?.return_received_quantity ?? 0)
+      return { id: i.id, quantity: Math.max(0, fulfilled - alreadyBack) }
+    })
+    .filter((i: any) => i.quantity > 0)
 
-  if (items.length === 0) return { created: false, items: 0, reason: "No returnable items" }
+  if (items.length === 0) {
+    return {
+      created: false,
+      items: 0,
+      reason: "Nothing has shipped on this order yet, so there is nothing to return.",
+    }
+  }
 
   await createAndCompleteReturnOrderWorkflow(container).run({
     input: { order_id: orderId, items },

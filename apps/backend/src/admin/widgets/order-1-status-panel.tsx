@@ -415,13 +415,21 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
                   </Text>
                 )}
               </div>
-              <Button
-                size="small"
-                disabled={!activeCourier}
-                onClick={() => setPending("courier_booked")}
+              <Tooltip
+                content={
+                  activeCourier
+                    ? TRANSITION_EFFECT.courier_booked ?? "Books the parcel with your active courier."
+                    : "No courier is active — set one up in Store Settings → Couriers first."
+                }
               >
-                Send to courier
-              </Button>
+                <Button
+                  size="small"
+                  disabled={!activeCourier}
+                  onClick={() => setPending("courier_booked")}
+                >
+                  Send to courier
+                </Button>
+              </Tooltip>
             </div>
 
             {/* Manual */}
@@ -433,9 +441,11 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
                   goods books.
                 </Text>
               </div>
-              <Button size="small" variant="secondary" onClick={() => setPending("dispatched")}>
-                Ship manually
-              </Button>
+              <Tooltip content="You ship it yourself — no courier is booked. Dispatches immediately: stock leaves the shelf and cost of goods is booked.">
+                <Button size="small" variant="secondary" onClick={() => setPending("dispatched")}>
+                  Ship manually
+                </Button>
+              </Tooltip>
             </div>
           </div>
         </div>
@@ -518,14 +528,15 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
           {nextActions.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {nextActions.map((s, i) => (
-                <Button
-                  key={s}
-                  size="small"
-                  variant={i === 0 ? "primary" : "secondary"}
-                  onClick={() => setPending(s)}
-                >
-                  {NEXT_ACTION_LABEL[s]}
-                </Button>
+                <Tooltip key={s} content={TRANSITION_EFFECT[s] ?? NEXT_ACTION_LABEL[s]}>
+                  <Button
+                    size="small"
+                    variant={i === 0 ? "primary" : "secondary"}
+                    onClick={() => setPending(s)}
+                  >
+                    {NEXT_ACTION_LABEL[s]}
+                  </Button>
+                </Tooltip>
               ))}
             </div>
           )}
@@ -539,19 +550,22 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
           <Label size="small">Something went wrong?</Label>
           <div className="flex flex-wrap gap-1.5">
             {canRebook && (
-              <Button size="small" variant="secondary" onClick={() => setRebookOpen(true)}>
-                Rebook courier
-              </Button>
+              <Tooltip content="The courier failed to collect or deliver. Cancels the old consignment where their API allows it and books a fresh parcel — the order stays where it is.">
+                <Button size="small" variant="secondary" onClick={() => setRebookOpen(true)}>
+                  Rebook courier
+                </Button>
+              </Tooltip>
             )}
             {exceptionNext.map((s) => (
-              <Button
-                key={s}
-                size="small"
-                variant={s === "cancelled" || s === "refunded" ? "danger" : "secondary"}
-                onClick={() => setPending(s)}
-              >
-                {ORDER_STATUS_META[s].label}
-              </Button>
+              <Tooltip key={s} content={TRANSITION_EFFECT[s] ?? ORDER_STATUS_META[s].label}>
+                <Button
+                  size="small"
+                  variant={s === "cancelled" || s === "refunded" ? "danger" : "secondary"}
+                  onClick={() => setPending(s)}
+                >
+                  {ORDER_STATUS_META[s].label}
+                </Button>
+              </Tooltip>
             ))}
           </div>
         </div>
