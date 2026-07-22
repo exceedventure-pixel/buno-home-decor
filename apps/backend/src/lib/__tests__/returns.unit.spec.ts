@@ -16,6 +16,11 @@ jest.mock("@medusajs/core-flows", () => ({
   createAndCompleteReturnOrderWorkflow: () => ({ run: workflowRun }),
 }))
 
+// The canonical warehouse the goods come back to.
+jest.mock("../inventory/stock-location", () => ({
+  requireSellableLocation: async () => ({ id: "sloc_canonical", name: "Warehouse" }),
+}))
+
 const containerWith = (order: any) =>
   ({
     resolve: () => ({
@@ -42,7 +47,12 @@ describe("returnAndRestockOrder", () => {
 
     expect(r.created).toBe(true)
     expect(workflowRun).toHaveBeenCalledWith({
-      input: { order_id: "o1", items: [{ id: "i1", quantity: 2 }] },
+      input: {
+        order_id: "o1",
+        items: [{ id: "i1", quantity: 2 }],
+        location_id: "sloc_canonical",
+        receive_now: false,
+      },
     })
   })
 
@@ -53,7 +63,12 @@ describe("returnAndRestockOrder", () => {
     await returnAndRestockOrder(c, "o1")
 
     expect(workflowRun).toHaveBeenCalledWith({
-      input: { order_id: "o1", items: [{ id: "i1", quantity: 2 }] },
+      input: {
+        order_id: "o1",
+        items: [{ id: "i1", quantity: 2 }],
+        location_id: "sloc_canonical",
+        receive_now: false,
+      },
     })
   })
 
@@ -69,7 +84,12 @@ describe("returnAndRestockOrder", () => {
 
     // i1: 4 shipped − 1 back = 3. i2 is fully back already, so it drops out entirely.
     expect(workflowRun).toHaveBeenCalledWith({
-      input: { order_id: "o1", items: [{ id: "i1", quantity: 3 }] },
+      input: {
+        order_id: "o1",
+        items: [{ id: "i1", quantity: 3 }],
+        location_id: "sloc_canonical",
+        receive_now: false,
+      },
     })
   })
 
@@ -96,6 +116,21 @@ describe("returnAndRestockOrder", () => {
     expect(r.created).toBe(false)
     expect(r.reason).toMatch(/already has a return/i)
     expect(workflowRun).not.toHaveBeenCalled()
+  })
+
+  it("receives in one step when the parcel is already in hand", async () => {
+    const c = containerWith({ id: "o1", status: "pending", returns: [], items: [line("i1", 2, 2)] })
+
+    await returnAndRestockOrder(c, "o1", { receiveNow: true })
+
+    expect(workflowRun).toHaveBeenCalledWith({
+      input: {
+        order_id: "o1",
+        items: [{ id: "i1", quantity: 2 }],
+        location_id: "sloc_canonical",
+        receive_now: true,
+      },
+    })
   })
 
   it("never returns a cancelled order", async () => {

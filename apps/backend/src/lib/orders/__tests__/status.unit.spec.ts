@@ -39,9 +39,13 @@ describe("derivePaymentStatus", () => {
     expect(derivePaymentStatus({ ...cod, captured: 2500.01 })).toBe("paid")
   })
 
-  it("any refund flags the order as Refunded", () => {
+  it("distinguishes a full refund from a part one", () => {
+    // A ৳500 goodwill refund on a ৳2,500 order used to read as fully Refunded, which hid the fact
+    // that ৳2,000 of the customer's money is still ours. See return-refund.unit.spec.ts.
     expect(derivePaymentStatus({ ...cod, captured: 2500, refunded: 2500 })).toBe("refunded")
-    expect(derivePaymentStatus({ ...cod, captured: 2500, refunded: 500 })).toBe("refunded")
+    expect(derivePaymentStatus({ ...cod, captured: 2500, refunded: 500 })).toBe(
+      "partially_refunded"
+    )
   })
 })
 

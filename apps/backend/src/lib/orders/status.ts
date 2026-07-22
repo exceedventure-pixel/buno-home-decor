@@ -43,9 +43,15 @@ export function derivePaymentStatus(f: PaymentFacts): OrderPaymentStatus {
   const captured = Number(f.captured) || 0
   const refunded = Number(f.refunded) || 0
 
-  // Money went back to the customer. Their status list has no "partially refunded", so any
-  // refund flags the order — the exact amounts are shown alongside it.
-  if (refunded > 0) return "refunded"
+  /**
+   * Money went back to the customer — but "some of it" and "all of it" are different facts.
+   *
+   * A ৳300 goodwill refund on a ৳3,000 order used to report the same status as handing the whole
+   * lot back, which made a part-refunded order impossible to tell from a fully reversed one.
+   */
+  if (refunded > 0) {
+    return captured > 0 && refunded < captured ? "partially_refunded" : "refunded"
+  }
 
   if (captured <= 0) return f.is_cod ? "cod" : "unpaid"
 
@@ -68,9 +74,18 @@ export type OrderFacts = {
   fulfilled_qty: number
   /** Σ items.detail.delivered_quantity, or the courier reporting delivery. */
   delivered: boolean
-  /** Σ items.detail.return_received_quantity — units physically back on the shelf. */
+  /**
+   * Units the customer is sending back — Σ return_requested_quantity, or received where a return
+   * was taken in one step. Deliberately counts REQUESTED, not just received: the moment a parcel
+   * turns around the order is a return, even while it's still in the courier's van.
+   */
   returned_qty: number
   refunded_amount: number
+  /**
+   * Cash captured on the order. Needed to tell a PARTIAL refund from a full one — without it any
+   * refund at all reads as "Refunded".
+   */
+  captured_amount?: number
 }
 
 /**
@@ -82,7 +97,19 @@ export type OrderFacts = {
  * opinion on: the workshop.
  */
 export function resolveOrderStatus(stage: StoredStage, facts: OrderFacts): OrderStatus {
-  if ((Number(facts.refunded_amount) || 0) > 0) return "refunded"
+  /**
+   * ONLY A FULL REFUND IS "REFUNDED".
+   *
+   * This used to fire on any refunded_amount > 0, so giving ৳300 back on a ৳3,000 order as
+   * goodwill relabelled the whole order Refunded — hiding whether it had actually been delivered
+   * or returned. A partial refund is a fact about the MONEY, not about where the order got to, so
+   * it belongs in payment status and leaves the journey alone.
+   */
+  const refunded = Number(facts.refunded_amount) || 0
+  const captured = Number(facts.captured_amount ?? 0) || 0
+  const fullyRefunded = refunded > 0 && (captured <= 0 || refunded >= captured)
+  if (fullyRefunded) return "refunded"
+
   if (facts.canceled) return "cancelled"
   if ((Number(facts.returned_qty) || 0) > 0) return "returned"
   if (facts.delivered) return "delivered"

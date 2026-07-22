@@ -1,8 +1,7 @@
 import {
   cancelOrderWorkflow,
   createOrderFulfillmentWorkflow,
-  markOrderFulfillmentAsDeliveredWorkflow,
-  refundPaymentWorkflow,
+  markOrderFulfillmentAsDeliveredWorkflow,
 } from "@medusajs/core-flows"
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys, MedusaError } from "@medusajs/framework/utils"
@@ -13,6 +12,7 @@ import { bookCourierParcel } from "../../../lib/orders/courier-booking"
 import { computeOrderEconomics } from "../../../lib/orders/order-economics"
 import { reserveOrderItems } from "../../../lib/orders/reserve"
 import { canTransition, issueWritesOffGoods } from "../../../lib/orders/status"
+import { refundOrder } from "../../../lib/orders/refund"
 import { returnAndRestockOrder } from "../../../lib/returns"
 import {
   STORED_STAGES,
@@ -175,7 +175,7 @@ export const transitionOrderStep = createStep(
     }
 
     if (input.to === "refunded") {
-      await refundAllCaptured(container, input.order_id)
+      await refundOrder(container, input.order_id)
     }
 
     /* ------------------------------- record what happened ------------------------------ */
@@ -248,45 +248,6 @@ async function markDelivered(container: MedusaContainer, orderId: string) {
     await markOrderFulfillmentAsDeliveredWorkflow(container).run({
       input: { orderId, fulfillmentId: f.id },
     })
-  }
-}
-
-/** Give back everything we took. */
-async function refundAllCaptured(container: MedusaContainer, orderId: string) {
-  const query = container.resolve(ContainerRegistrationKeys.QUERY)
-  const { data } = await query.graph({
-    entity: "order",
-    fields: [
-      "id",
-      "payment_collections.payments.id",
-      "payment_collections.payments.amount",
-      "payment_collections.payments.captured_at",
-      "payment_collections.payments.refunds.amount",
-    ],
-    filters: { id: orderId },
-  })
-
-  const payments = ((data?.[0] as any)?.payment_collections ?? []).flatMap(
-    (pc: any) => pc.payments ?? []
-  )
-
-  let refundedAny = false
-  for (const p of payments) {
-    if (!p.captured_at) continue
-    const already = (p.refunds ?? []).reduce((s: number, r: any) => s + Number(r.amount || 0), 0)
-    const left = Number(p.amount || 0) - already
-    if (left <= 0) continue
-    await refundPaymentWorkflow(container).run({
-      input: { payment_id: p.id, amount: left },
-    })
-    refundedAny = true
-  }
-
-  if (!refundedAny) {
-    throw new MedusaError(
-      MedusaError.Types.NOT_ALLOWED,
-      "There is no captured payment to refund on this order."
-    )
   }
 }
 

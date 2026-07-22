@@ -10,7 +10,7 @@ export type OrderStatusKey =
   | "dispatched" | "delivered" | "cancelled" | "on_hold" | "returned" | "refunded"
 
 export type PaymentStatusKey =
-  | "unpaid" | "advance_paid" | "partially_paid" | "paid" | "cod" | "refunded"
+  | "unpaid" | "advance_paid" | "partially_paid" | "paid" | "cod" | "partially_refunded" | "refunded"
 
 export type IssueStatusKey =
   | "none" | "returned" | "damaged" | "wrong_product" | "exchange_requested" | "refunded"
@@ -77,6 +77,7 @@ export const PAYMENT_STATUS_META: Record<PaymentStatusKey, { label: string; colo
   partially_paid: { label: "Partially Paid",   color: "orange" },
   paid:           { label: "Paid",             color: "green" },
   cod:            { label: "Cash on Delivery", color: "grey" },
+  partially_refunded: { label: "Partially Refunded", color: "orange" },
   refunded:       { label: "Refunded",         color: "red" },
 }
 
@@ -121,11 +122,12 @@ export const TRANSITION_EFFECT: Partial<Record<OrderStatusKey, string>> = {
     "Creates the fulfilment: stock leaves the shelf and cost of goods is booked (FIFO).",
   delivered: "Captures the outstanding payment — the cash the courier collected lands in the books.",
   returned:
-    "Creates and receives a return: the goods go back on the shelf and their COGS reverses. The courier fee stays a real cost, and any cash you collected only counts as revenue until you record the refund.",
+    "Records that the parcel turned around. Revenue reverses now — the customer isn't paying — but the stock only comes back when you mark it received, on the order page. No money is refunded; the courier fee stays a real cost.",
   cancelled:
-    "If nothing shipped, releases the stock reservation. If it already went out, this is an RTO — the goods come back, but the courier fee is still a real cost.",
+    "If nothing shipped, releases the stock reservation. If it already went out, this is an RTO — the goods are marked coming back (restocked once received), and the courier fee is still a real cost.",
   on_hold: "Pauses the order where it is. Nothing moves; it rejoins the line where it left off.",
-  refunded: "Refunds the captured payment — money goes back to the customer.",
+  refunded:
+    "Refunds everything still held — money goes back to the customer, stock is untouched. For a part-refund, use Refund on the order page instead.",
 }
 
 export type OrderRow = {
@@ -153,7 +155,10 @@ export type OrderRow = {
   refunded: number
   outstanding: number
   units_shipped: number
+  /** Units physically back on the shelf. */
   units_returned: number
+  /** Units the customer has sent back — includes any still in transit to us. */
+  units_coming_back: number
   tracking: string | null
   courier_id: string | null
   courier_status: string | null
@@ -162,6 +167,11 @@ export type OrderRow = {
   note: string | null
   cod_amount: number
   actual_delivery_charge: number | null
+  /** Exchange links — the order this one replaces, and the one that replaced it. */
+  replaces_order_id: string | null
+  replaces_display_id: number | null
+  replaced_by_order_id: string | null
+  replaced_by_display_id: number | null
   /** What this row may legally move to next — type-aware, computed server-side. */
   allowed_next: OrderStatusKey[]
 }

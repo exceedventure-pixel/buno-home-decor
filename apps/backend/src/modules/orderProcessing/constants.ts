@@ -240,6 +240,8 @@ export const PAYMENT_STATUSES = [
   "partially_paid",
   "paid",
   "cod",
+  /** Some of the money went back, not all — a goodwill or partial refund. */
+  "partially_refunded",
   "refunded",
 ] as const
 export type OrderPaymentStatus = (typeof PAYMENT_STATUSES)[number]
@@ -253,6 +255,7 @@ export const PAYMENT_STATUS_META: Record<
   partially_paid: { label: "Partially Paid",   color: "orange" },
   paid:           { label: "Paid",             color: "green" },
   cod:            { label: "Cash on Delivery", color: "grey" },
+  partially_refunded: { label: "Partially Refunded", color: "orange" },
   refunded:       { label: "Refunded",         color: "red" },
 }
 
@@ -306,10 +309,12 @@ export const ISSUE_STATUS_META: Record<
   },
 }
 
-/** Issues where the goods come BACK to the shelf (as opposed to being written off). */
-export const RESTOCKING_ISSUES: IssueStatus[] = [
-  "returned",
-  "wrong_product",
-  "exchange_requested",
-]
+/**
+ * Issue statuses are REASONS, not mechanisms.
+ *
+ * There used to be a `RESTOCKING_ISSUES` list here implying that setting "Wrong Product" or
+ * "Exchange Requested" put goods back on the shelf. It never did — nothing read it. Restocking
+ * happens through the explicit return/receive actions, and an exchange through the exchange
+ * action; these labels only record WHY.
+ */
 

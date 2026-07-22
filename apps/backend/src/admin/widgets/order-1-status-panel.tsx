@@ -311,7 +311,15 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
   const next = data?.allowed_next ?? []
 
   const pipeline = pipelineFor(o.order_type)
-  const exceptionNext = next.filter(isExceptionStatus)
+  /**
+   * Returning and refunding are NOT offered here. They live in the "After the Sale" widget below,
+   * which is the only place that can express them properly — a return has two stages (coming back
+   * vs on the shelf) and a refund needs an amount. A second button doing a blunter version of the
+   * same thing is how the two end up disagreeing.
+   */
+  const exceptionNext = next.filter(
+    (s) => isExceptionStatus(s) && s !== "returned" && s !== "refunded"
+  )
   const offTheLine = isExceptionStatus(o.order_status)
 
   // The Shipment-method chooser owns the courier-vs-manual decision, shown once the order is ready

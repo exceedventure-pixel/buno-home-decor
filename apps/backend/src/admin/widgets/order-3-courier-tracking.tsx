@@ -1,10 +1,8 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import type { DetailWidgetProps, HttpTypes } from "@medusajs/framework/types"
-import { Badge, Button, Container, Prompt, Text, Tooltip, toast } from "@medusajs/ui"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useState } from "react"
+import { Badge, Container, Text } from "@medusajs/ui"
+import { useQuery } from "@tanstack/react-query"
 
-import { adminFetch } from "../lib/api"
 import { money } from "../lib/kpi"
 import { opApi } from "../lib/order-processing-api"
 
@@ -17,6 +15,10 @@ import { opApi } from "../lib/order-processing-api"
  * the COD to collect, and the actual delivery charge once the courier reports one.
  *
  * Manual shipments have no consignment, so this renders nothing for them (correct).
+ *
+ * READ-ONLY on purpose. Returns used to be actioned from here, which meant a manually delivered
+ * order — no consignment, so no widget — had no way to be returned at all. That lives in the
+ * After the Sale widget now, which renders for every order that shipped.
  */
 
 const STATUS_LABELS: Record<
@@ -67,10 +69,7 @@ function Row({ label, children }: { label: string; children: string }) {
 
 function TrackingWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>) {
   const orderId = (order as any).id
-  const qc = useQueryClient()
   const cur = (order as any).currency_code ?? "bdt"
-  const [busy, setBusy] = useState(false)
-  const [promptOpen, setPromptOpen] = useState(false)
 
   const { data } = useQuery({
     queryKey: ["order-processing", orderId],
@@ -87,32 +86,6 @@ function TrackingWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>
   const statusInfo = STATUS_LABELS[o.courier_status ?? "pending"] ?? STATUS_LABELS.unknown
   const courierName = COURIER_NAMES[o.courier_id ?? ""] ?? o.courier_id ?? "Courier"
   const trackUrl = o.tracking ? TRACK_URL[o.courier_id ?? ""]?.(o.tracking) ?? null : null
-
-  const alreadyReturned = o.courier_status === "returned"
-  const isCancelled = o.courier_status === "cancelled"
-
-  const handleReturn = async () => {
-    setBusy(true)
-    try {
-      const r = await adminFetch<{ success: boolean; created: boolean; items?: number; message?: string }>(
-        `/orders/${orderId}/mark-returned`,
-        { method: "POST" }
-      )
-      if (r.created) {
-        toast.success(`Return recorded — ${r.items} item type(s) restocked`)
-        qc.invalidateQueries({ queryKey: ["orders"] })
-        qc.invalidateQueries({ queryKey: ["order-processing"] })
-        qc.invalidateQueries({ queryKey: ["accounting"] })
-      } else {
-        toast.info(r.message || "Nothing to return")
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Failed to record return")
-    } finally {
-      setBusy(false)
-      setPromptOpen(false)
-    }
-  }
 
   return (
     <Container className="divide-y divide-ui-border-base p-0">
@@ -168,48 +141,6 @@ function TrackingWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>
         </Text>
       </div>
 
-      {!isCancelled && (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
-          <Text size="small" className="text-ui-fg-subtle">
-            {alreadyReturned
-              ? "This order was returned — items have been restocked."
-              : "If the parcel came back, record the return to restock inventory. No refund is issued."}
-          </Text>
-          <Tooltip
-            content={
-              alreadyReturned
-                ? "Already returned — the goods are back on the shelf."
-                : "The parcel came back. Puts the shipped units back into stock and reverses their cost of goods. The courier fee stays a real cost, and no refund is issued — record that separately if you gave the money back."
-            }
-          >
-            <Button
-              size="small"
-              variant="secondary"
-              disabled={busy || alreadyReturned}
-              isLoading={busy}
-              onClick={() => setPromptOpen(true)}
-            >
-              {alreadyReturned ? "Returned" : "Mark returned & restock"}
-            </Button>
-          </Tooltip>
-        </div>
-      )}
-
-      <Prompt open={promptOpen} onOpenChange={setPromptOpen} variant="confirmation">
-        <Prompt.Content>
-          <Prompt.Header>
-            <Prompt.Title>Mark this order as returned?</Prompt.Title>
-            <Prompt.Description>
-              This creates a return for all items on the order and adds their quantities back to
-              inventory. No refund is issued — handle any refund manually. This can't be undone here.
-            </Prompt.Description>
-          </Prompt.Header>
-          <Prompt.Footer>
-            <Prompt.Cancel disabled={busy}>Cancel</Prompt.Cancel>
-            <Prompt.Action onClick={handleReturn}>Return &amp; restock</Prompt.Action>
-          </Prompt.Footer>
-        </Prompt.Content>
-      </Prompt>
     </Container>
   )
 }

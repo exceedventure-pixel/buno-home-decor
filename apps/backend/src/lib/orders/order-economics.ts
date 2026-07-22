@@ -74,7 +74,10 @@ export type OrderEconomics = {
   outstanding: number
 
   units_shipped: number
+  /** Units physically back on the shelf. */
   units_returned: number
+  /** Units the customer has sent back — includes any still in transit to us. */
+  units_coming_back: number
   tracking: string | null
   courier_id: string | null
   /** Normalised courier status (pending | in_transit | delivered | returned | cancelled). */
@@ -86,6 +89,12 @@ export type OrderEconomics = {
   cod_amount: number
   /** The courier's own delivery charge, once captured from its API (else null). */
   actual_delivery_charge: number | null
+
+  /** Exchange links. This order replaces / was replaced by another — id and its human number. */
+  replaces_order_id: string | null
+  replaces_display_id: number | null
+  replaced_by_order_id: string | null
+  replaced_by_display_id: number | null
 }
 
 /**
@@ -188,6 +197,7 @@ export async function computeOrderEconomics(
       "items.detail.fulfilled_quantity",
       "items.detail.delivered_quantity",
       "items.detail.return_received_quantity",
+      "items.detail.return_requested_quantity",
       // `captured_amount`/`refunded_amount` are NOT exposed to query.graph. A payment is
       // captured in full, so `captured_at` + `amount` IS the cash that came in, and the
       // refunds are their own rows. Multiple payments = an advance plus the COD balance.
@@ -198,6 +208,27 @@ export async function computeOrderEconomics(
       "fulfillments.data",
     ]),
   ])
+
+  /**
+   * Exchange links point at orders that may sit OUTSIDE this query's window (a replacement created
+   * today for an order from last month), so resolve their human numbers separately. Scalars only,
+   * and only for the ids actually referenced.
+   */
+  const linkedIds = new Set<string>()
+  for (const t of totalsRows) {
+    const wf = wfByOrder.get(t.id)
+    if (wf?.replaces_order_id) linkedIds.add(wf.replaces_order_id)
+    if (wf?.replaced_by_order_id) linkedIds.add(wf.replaced_by_order_id)
+  }
+  const linkedDisplayId = new Map<string, number>()
+  if (linkedIds.size) {
+    const { data } = await query.graph({
+      entity: "order",
+      fields: ["id", "display_id"],
+      filters: { id: [...linkedIds] },
+    })
+    for (const r of data ?? []) linkedDisplayId.set(r.id, num(r.display_id))
+  }
 
   const detailById = new Map<string, any>(detailRows.map((r: any) => [r.id, r]))
   const orders: any[] = totalsRows.map((t: any) => {
@@ -236,15 +267,32 @@ export async function computeOrderEconomics(
     }
 
     // ── Goods: what physically moved ─────────────────────────────────────────
+    /**
+     * A RETURN HAPPENS IN TWO MOMENTS, AND THEY MEAN DIFFERENT THINGS.
+     *
+     *   requested — the parcel has turned around. The customer isn't paying for it, so the MONEY
+     *               reverses now, even though the goods are still in a van.
+     *   received  — the goods are physically back. Only now do they return to stock, and only now
+     *               does FIFO stop counting them as sold (it reads fulfilled − received itself).
+     *
+     * Collapsing the two would either credit stock that isn't back, or keep booking revenue for a
+     * sale everyone already knows is dead.
+     */
     let unitsShipped = 0
     let unitsReturned = 0
+    let unitsComingBack = 0
     let returnedValue = 0
     for (const it of o.items ?? []) {
       const fulfilled = num(it.detail?.fulfilled_quantity)
-      const returned = num(it.detail?.return_received_quantity)
+      const received = num(it.detail?.return_received_quantity)
+      const requested = num(it.detail?.return_requested_quantity)
+      // A one-step return records receipt without ever showing as requested, so take whichever is
+      // further along.
+      const onItsWay = Math.max(requested, received)
       unitsShipped += fulfilled
-      unitsReturned += returned
-      returnedValue += num(it.unit_price) * returned
+      unitsReturned += received
+      unitsComingBack += onItsWay
+      returnedValue += num(it.unit_price) * onItsWay
     }
 
     const delivered = (o.items ?? []).some((it: any) => num(it.detail?.delivered_quantity) > 0)
@@ -264,8 +312,10 @@ export async function computeOrderEconomics(
       canceled: !!o.canceled_at,
       fulfilled_qty: unitsShipped,
       delivered: delivered || courierDelivered,
-      returned_qty: unitsReturned,
+      returned_qty: unitsComingBack,
       refunded_amount: refunded,
+      // Lets the status tell a PARTIAL refund from a full one.
+      captured_amount: captured,
     }
 
     const orderStatus = resolveOrderStatus(stage, facts)
@@ -313,7 +363,7 @@ export async function computeOrderEconomics(
     if (facts.canceled && unitsShipped === 0) {
       productRevenue = 0
       deliveryCharged = 0
-    } else if (facts.canceled || unitsReturned > 0 || goodsDestroyed) {
+    } else if (facts.canceled || unitsComingBack > 0 || goodsDestroyed) {
       // Destroyed in transit is the same story as a return: the customer never got the goods, so
       // there is no sale — only whatever cash they had already put down.
       if (facts.canceled || goodsDestroyed) productRevenue = 0
@@ -400,6 +450,7 @@ export async function computeOrderEconomics(
 
       units_shipped: unitsShipped,
       units_returned: unitsReturned,
+      units_coming_back: unitsComingBack,
       tracking: trackingId,
       courier_id: courierId,
       courier_status: courierStatus,
@@ -408,6 +459,15 @@ export async function computeOrderEconomics(
       cod_amount: num(wf?.cod_amount),
       actual_delivery_charge:
         wf?.actual_delivery_charge != null ? num(wf.actual_delivery_charge) : null,
+
+      replaces_order_id: wf?.replaces_order_id ?? null,
+      replaces_display_id: wf?.replaces_order_id
+        ? linkedDisplayId.get(wf.replaces_order_id) ?? null
+        : null,
+      replaced_by_order_id: wf?.replaced_by_order_id ?? null,
+      replaced_by_display_id: wf?.replaced_by_order_id
+        ? linkedDisplayId.get(wf.replaced_by_order_id) ?? null
+        : null,
     }
   })
 }

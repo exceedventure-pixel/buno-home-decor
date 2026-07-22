@@ -66,6 +66,15 @@ const OrderWorkflow = model
      * cost silently vanished. Counted inside this order's cost of goods, alongside production.
      */
     production_freight: model.bigNumber().default(0),
+    /**
+     * EXCHANGE LINKS. When we ship the wrong item, the correct one goes out as its OWN order so
+     * each parcel keeps its own courier cost and P&L — but the two must not become strangers.
+     *
+     *   replaces_order_id    — on the replacement, pointing back at the order that went wrong.
+     *   replaced_by_order_id — on the original, pointing forward at the replacement.
+     */
+    replaces_order_id: model.text().nullable(),
+    replaced_by_order_id: model.text().nullable(),
 
     /**
      * The delivery amount actually CHARGED to the customer (revenue side). Null means "use
