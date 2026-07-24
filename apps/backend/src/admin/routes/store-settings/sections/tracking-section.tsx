@@ -13,10 +13,42 @@ type TrackingSettings = {
   purchase_event_enabled: boolean
 }
 
+/** Which card's save button is currently in flight — only one at a time. */
+type Section = "pixel" | "ga4" | "capi"
+
 function ConfiguredBadge({ configured }: { configured: boolean }) {
   return configured
     ? <Badge color="green" size="2xsmall">Configured</Badge>
     : <Badge color="orange" size="2xsmall">Not configured</Badge>
+}
+
+/**
+ * Catch the most common paste mistake before it reaches the API.
+ *
+ * The API stores whatever string it's given, and the storefront drops that value straight into
+ * `gtag/js?id=...`. Pasting the whole <script> snippet from Google therefore saves "successfully"
+ * and silently breaks tracking, with nothing to indicate why. These check the shape instead.
+ */
+function validateGa4(value: string): string | null {
+  if (!value) return null // empty clears the setting — intentional
+  if (/<script|googletagmanager|gtag\(/i.test(value)) {
+    return "That's the full snippet. Paste only the Measurement ID — the G-XXXXXXXXXX part."
+  }
+  if (!/^G-[A-Z0-9]{4,}$/i.test(value)) {
+    return "Measurement IDs look like G-XXXXXXXXXX."
+  }
+  return null
+}
+
+function validatePixel(value: string): string | null {
+  if (!value) return null
+  if (/<script|fbq\(/i.test(value)) {
+    return "That's the full snippet. Paste only the Pixel ID — the 15-16 digit number."
+  }
+  if (!/^\d{15,16}$/.test(value)) {
+    return "Pixel IDs are a 15-16 digit number."
+  }
+  return null
 }
 
 export function TrackingSection() {
@@ -34,7 +66,16 @@ export function TrackingSection() {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
   const [testing, setTesting] = useState(false)
   const [initialized, setInitialized] = useState(false)
+  const [savingSection, setSavingSection] = useState<Section | null>(null)
+  const [fieldError, setFieldError] = useState<{ pixel?: string; ga4?: string }>({})
 
+  /**
+   * Seed the inputs once, on first load only.
+   *
+   * Deliberately NOT re-run after each save: with per-card saves, re-seeding every field from the
+   * server would wipe out whatever the operator had typed into the *other* cards but not saved yet.
+   * The badges read from `data`, so they still reflect server truth after a refetch.
+   */
   if (data && !initialized) {
     setPixelId(data.meta_pixel_id ?? "")
     setGa4Id(data.ga4_measurement_id ?? "")
@@ -44,25 +85,50 @@ export function TrackingSection() {
     setInitialized(true)
   }
 
+  // The success message rides alongside the payload — not inside it — so each card can report its
+  // own outcome without sending a stray field the API would have to ignore.
   const saveMutation = useMutation({
-    mutationFn: () =>
-      adminFetch("/tracking", {
-        method: "POST",
-        body: JSON.stringify({
-          meta_pixel_id: pixelId || null,
-          ga4_measurement_id: ga4Id || null,
-          capi_enabled: capiEnabled,
-          purchase_event_enabled: purchaseEnabled,
-          capi_test_event_code: testEventCode || null,
-        }),
-      }),
-    onSuccess: () => {
-      toast.success("Tracking settings saved")
+    mutationFn: ({ payload }: { payload: Record<string, unknown>; message: string }) =>
+      adminFetch("/tracking", { method: "POST", body: JSON.stringify(payload) }),
+    onSuccess: (_res, { message }) => {
+      toast.success(message)
       queryClient.invalidateQueries({ queryKey: ["admin-tracking"] })
-      setInitialized(false)
     },
     onError: (err: Error) => toast.error(err.message || "Save failed"),
+    onSettled: () => setSavingSection(null),
   })
+
+  const save = (section: Section, payload: Record<string, unknown>, message: string) => {
+    setSavingSection(section)
+    saveMutation.mutate({ payload, message })
+  }
+
+  const handleSavePixel = () => {
+    const value = pixelId.trim()
+    const err = validatePixel(value)
+    setFieldError((p) => ({ ...p, pixel: err ?? undefined }))
+    if (err) return
+    save("pixel", { meta_pixel_id: value || null }, value ? "Meta Pixel configured" : "Meta Pixel cleared")
+  }
+
+  const handleSaveGa4 = () => {
+    const value = ga4Id.trim()
+    const err = validateGa4(value)
+    setFieldError((p) => ({ ...p, ga4: err ?? undefined }))
+    if (err) return
+    save("ga4", { ga4_measurement_id: value || null }, value ? "Google Analytics configured" : "Google Analytics cleared")
+  }
+
+  const handleSaveCapi = () =>
+    save(
+      "capi",
+      {
+        capi_enabled: capiEnabled,
+        purchase_event_enabled: purchaseEnabled,
+        capi_test_event_code: testEventCode.trim() || null,
+      },
+      "Conversions API settings saved"
+    )
 
   const handleTest = async () => {
     setTesting(true)
@@ -93,6 +159,13 @@ export function TrackingSection() {
     return <Text size="small" className="text-ui-fg-subtle">Loading settings…</Text>
   }
 
+  const pixelDirty = pixelId.trim() !== (data?.meta_pixel_id ?? "")
+  const ga4Dirty = ga4Id.trim() !== (data?.ga4_measurement_id ?? "")
+  const capiDirty =
+    capiEnabled !== (data?.capi_enabled ?? false) ||
+    purchaseEnabled !== (data?.purchase_event_enabled ?? true) ||
+    testEventCode.trim() !== (data?.capi_test_event_code ?? "")
+
   return (
     <div className="flex flex-col gap-y-3">
       {/* Meta Pixel */}
@@ -103,8 +176,32 @@ export function TrackingSection() {
         </div>
         <div className="px-6 py-4 flex flex-col gap-y-2">
           <Text size="small" weight="plus">Pixel ID</Text>
-          <Input placeholder={data?.meta_pixel_id ? `Current: ${data.meta_pixel_id}` : "e.g. 1234567890123456"} value={pixelId} onChange={(e) => setPixelId(e.target.value)} />
-          <Text size="small" className="text-ui-fg-subtle">15-16 digit number from Meta Events Manager. Not a secret — stored plainly.</Text>
+          <Input
+            placeholder="e.g. 1234567890123456"
+            value={pixelId}
+            onChange={(e) => {
+              setPixelId(e.target.value)
+              setFieldError((p) => ({ ...p, pixel: undefined }))
+            }}
+            aria-invalid={Boolean(fieldError.pixel)}
+          />
+          {fieldError.pixel
+            ? <Text size="small" className="text-ui-tag-red-text">{fieldError.pixel}</Text>
+            : <Text size="small" className="text-ui-fg-subtle">15-16 digit number from Meta Events Manager. Not a secret — stored plainly.</Text>}
+          <div className="flex items-center gap-x-3 pt-1">
+            <Button
+              size="small"
+              variant="secondary"
+              isLoading={savingSection === "pixel"}
+              disabled={savingSection !== null || !pixelDirty}
+              onClick={handleSavePixel}
+            >
+              Save Pixel ID
+            </Button>
+            {!pixelDirty && data?.meta_pixel_id && (
+              <Text size="small" className="text-ui-fg-subtle">Saved — tracking is live.</Text>
+            )}
+          </div>
         </div>
       </Container>
 
@@ -116,8 +213,32 @@ export function TrackingSection() {
         </div>
         <div className="px-6 py-4 flex flex-col gap-y-2">
           <Text size="small" weight="plus">Measurement ID</Text>
-          <Input placeholder={data?.ga4_measurement_id ? `Current: ${data.ga4_measurement_id}` : "e.g. G-XXXXXXXXXX"} value={ga4Id} onChange={(e) => setGa4Id(e.target.value)} />
-          <Text size="small" className="text-ui-fg-subtle">Format: G-XXXXXXXXXX. From Google Analytics → Data Streams → Web.</Text>
+          <Input
+            placeholder="e.g. G-XXXXXXXXXX"
+            value={ga4Id}
+            onChange={(e) => {
+              setGa4Id(e.target.value)
+              setFieldError((p) => ({ ...p, ga4: undefined }))
+            }}
+            aria-invalid={Boolean(fieldError.ga4)}
+          />
+          {fieldError.ga4
+            ? <Text size="small" className="text-ui-tag-red-text">{fieldError.ga4}</Text>
+            : <Text size="small" className="text-ui-fg-subtle">Format: G-XXXXXXXXXX. From Google Analytics → Data Streams → Web.</Text>}
+          <div className="flex items-center gap-x-3 pt-1">
+            <Button
+              size="small"
+              variant="secondary"
+              isLoading={savingSection === "ga4"}
+              disabled={savingSection !== null || !ga4Dirty}
+              onClick={handleSaveGa4}
+            >
+              Save Measurement ID
+            </Button>
+            {!ga4Dirty && data?.ga4_measurement_id && (
+              <Text size="small" className="text-ui-fg-subtle">Saved — tracking is live.</Text>
+            )}
+          </div>
         </div>
       </Container>
 
@@ -127,7 +248,7 @@ export function TrackingSection() {
           <Text size="base" weight="plus">Meta Conversions API</Text>
           <div className="flex items-center gap-x-2">
             <ConfiguredBadge configured={Boolean(data?.capi_configured)} />
-            {capiEnabled && <Badge color="blue" size="2xsmall">Enabled</Badge>}
+            {data?.capi_enabled && <Badge color="blue" size="2xsmall">Enabled</Badge>}
           </div>
         </div>
 
@@ -166,10 +287,22 @@ export function TrackingSection() {
           </div>
 
           <div className="flex items-center gap-x-2">
-            <Button size="small" variant="secondary" disabled={!data?.capi_configured || testing} isLoading={testing} onClick={handleTest}>
+            <Button
+              size="small"
+              variant="secondary"
+              isLoading={savingSection === "capi"}
+              disabled={savingSection !== null || !capiDirty}
+              onClick={handleSaveCapi}
+            >
+              Save CAPI settings
+            </Button>
+            <Button size="small" variant="secondary" disabled={!data?.capi_configured || testing || capiDirty} isLoading={testing} onClick={handleTest}>
               Send test event
             </Button>
           </div>
+          {capiDirty && (
+            <Text size="small" className="text-ui-fg-subtle">Save your changes before sending a test event.</Text>
+          )}
 
           {testResult && (
             <div className={`flex items-center gap-x-2 rounded-md px-3 py-2 text-sm ${testResult.success ? "bg-ui-tag-green-bg text-ui-tag-green-text" : "bg-ui-tag-red-bg text-ui-tag-red-text"}`}>
@@ -179,12 +312,6 @@ export function TrackingSection() {
           )}
         </div>
       </Container>
-
-      <div>
-        <Button size="small" variant="primary" isLoading={saveMutation.isPending} disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
-          Save tracking settings
-        </Button>
-      </div>
     </div>
   )
 }

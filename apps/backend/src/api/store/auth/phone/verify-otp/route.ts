@@ -52,7 +52,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   const providedHash = hashOtp(code.trim())
   if (providedHash !== record.code_hash) {
     const newAttempts = record.attempts + 1
-    await authSvc.updateOtpRecords(record.id, { attempts: newAttempts })
+    await authSvc.updateOtpRecords({ id: record.id, attempts: newAttempts })
     const remaining = maxAttempts - newAttempts
     return res.status(401).json({ error: "Invalid verification code", attempts_remaining: remaining })
   }

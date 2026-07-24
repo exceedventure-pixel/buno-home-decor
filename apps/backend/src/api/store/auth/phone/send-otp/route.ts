@@ -53,7 +53,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   const last_sent_at = new Date()
 
   if (existing) {
-    await authSvc.updateOtpRecords(existing.id, { code_hash, expires_at, attempts: 0, last_sent_at })
+    await authSvc.updateOtpRecords({ id: existing.id, code_hash, expires_at, attempts: 0, last_sent_at })
   } else {
     await authSvc.createOtpRecords([{ phone, code_hash, expires_at, attempts: 0, last_sent_at }])
   }
@@ -72,7 +72,8 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   } catch (err: any) {
     // Roll back OTP record if SMS fails
     if (existing) {
-      await authSvc.updateOtpRecords(existing.id, {
+      await authSvc.updateOtpRecords({
+        id: existing.id,
         code_hash: existing.code_hash,
         expires_at: existing.expires_at,
         attempts: existing.attempts,
