@@ -10,8 +10,14 @@ export default async function AnalyticsScripts() {
   let metaPixelId: string | null = process.env.NEXT_PUBLIC_META_PIXEL_ID || null
   let ga4Id: string | null = null
   try {
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:9000"
+    // Use the same backend URL + publishable key as the rest of the storefront. The old
+    // process.env.BACKEND_URL was defined nowhere, so this always fell back to localhost and
+    // silently failed in production — the GA4/Pixel tag never reached the page even though the
+    // ID was saved in admin.
+    const backendUrl = process.env.NEXT_PUBLIC_MEDUSA_BACKEND_URL || "http://localhost:9000"
+    const publishableKey = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY || ""
     const res = await fetch(`${backendUrl}/store/tracking-public`, {
+      headers: publishableKey ? { "x-publishable-api-key": publishableKey } : {},
       cache: "no-store",
     })
     if (res.ok) {
