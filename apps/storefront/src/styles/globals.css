@@ -61,9 +61,9 @@
 
 @layer components {
   .content-container {
-    /* Widen on large monitors so big screens aren't mostly empty margin; a 1440px MacBook is
-       unaffected (w-full caps it to the viewport). */
-    @apply max-w-[1440px] w-full mx-auto px-6 large:max-w-[1600px] xlarge:max-w-[1780px] 2xlarge:max-w-[1880px];
+    /* MacBook (~1440px) stays near-full at 1440px; larger PC monitors get ~90% of the viewport
+       instead of the near-full width that felt too wide. */
+    @apply max-w-[1440px] w-full mx-auto px-6 xlarge:max-w-[90vw];
   }
 
   .contrast-btn {
