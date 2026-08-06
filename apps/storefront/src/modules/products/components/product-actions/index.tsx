@@ -8,6 +8,11 @@ import { HttpTypes } from "@medusajs/types"
 import { Button } from "@modules/common/components/ui"
 import Divider from "@modules/common/components/divider"
 import OptionSelect from "@modules/products/components/product-actions/option-select"
+import {
+  DELIVERY_INSIDE_DHAKA,
+  DELIVERY_OUTSIDE_DHAKA,
+  DELIVERY_PER_EXTRA_ITEM as DELIVERY_PER_EXTRA_QTY,
+} from "@lib/delivery-pricing"
 import { isEqual } from "lodash"
 import { useParams, usePathname, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -21,12 +26,6 @@ type ProductActionsProps = {
   disabled?: boolean
   storeSettings?: StoreContactSettings
 }
-
-// Buno's standard delivery policy, shown on the product page. Kept here (not store settings yet)
-// so the numbers are easy to find and change; note these are Buno-specific values.
-const DELIVERY_INSIDE_DHAKA = 100
-const DELIVERY_OUTSIDE_DHAKA = 150
-const DELIVERY_PER_EXTRA_QTY = 50
 
 const optionsAsKeymap = (
   variantOptions: HttpTypes.StoreProductVariant["options"]

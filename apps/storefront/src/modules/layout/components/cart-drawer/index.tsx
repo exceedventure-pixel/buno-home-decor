@@ -131,9 +131,10 @@ const CartDrawer = ({ cart }: { cart?: HttpTypes.StoreCart | null }) => {
                 {convertToLocale({ amount: subtotal, currency_code: cart.currency_code })}
               </span>
             </div>
-            <LocalizedClientLink href="/cart" onClick={close}>
+            {/* Straight to checkout — no separate cart page in between. */}
+            <LocalizedClientLink href="/checkout" onClick={close}>
               <Button className="w-full" size="large">
-                Go to cart
+                Checkout
               </Button>
             </LocalizedClientLink>
             <button

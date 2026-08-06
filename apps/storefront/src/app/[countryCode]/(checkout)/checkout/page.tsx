@@ -1,9 +1,9 @@
 import { retrieveCart } from "@lib/data/cart"
 import { retrieveCustomer } from "@lib/data/customer"
+import { listCartShippingMethods } from "@lib/data/fulfillment"
+import { listCartPaymentMethods } from "@lib/data/payment"
 import InitiateCheckoutTracker from "@modules/checkout/components/initiate-checkout-tracker"
-import PaymentWrapper from "@modules/checkout/components/payment-wrapper"
-import CheckoutForm from "@modules/checkout/templates/checkout-form"
-import CheckoutSummary from "@modules/checkout/templates/checkout-summary"
+import CheckoutFlat from "@modules/checkout/templates/checkout-flat"
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
 
@@ -19,18 +19,22 @@ export default async function Checkout() {
   }
 
   const customer = await retrieveCustomer()
+  const shippingMethods = await listCartShippingMethods(cart.id)
+  const paymentMethods = await listCartPaymentMethods(cart.region?.id ?? "")
 
   const currency = cart.currency_code ?? "usd"
-  const total = (cart.total ?? 0) / 100
+  const total = cart.total ?? 0
   const numItems = cart.items?.reduce((n, i) => n + (i.quantity ?? 0), 0) ?? 0
 
   return (
-    <div className="grid grid-cols-1 small:grid-cols-[1fr_416px] content-container gap-x-40 py-12">
+    <>
       <InitiateCheckoutTracker value={total} currency={currency} numItems={numItems} />
-      <PaymentWrapper cart={cart}>
-        <CheckoutForm cart={cart} customer={customer} />
-      </PaymentWrapper>
-      <CheckoutSummary cart={cart} />
-    </div>
+      <CheckoutFlat
+        cart={cart}
+        customer={customer}
+        availableShippingMethods={shippingMethods}
+        availablePaymentMethods={paymentMethods ?? []}
+      />
+    </>
   )
 }
