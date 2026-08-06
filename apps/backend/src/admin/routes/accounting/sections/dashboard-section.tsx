@@ -1,14 +1,20 @@
 import { Spinner } from "@medusajs/icons"
 import { Badge, Heading, Text } from "@medusajs/ui"
 import { useQuery } from "@tanstack/react-query"
+import { useState } from "react"
 
 import { Kpi, money } from "../../../lib/kpi"
 import { api } from "../lib/api"
+import { MonthSelect, currentMonthValue, monthRange } from "../lib/month-filter"
 
 export function DashboardSection() {
+  // The profit block is per-month; balance-sheet figures below stay all-time regardless.
+  const [month, setMonth] = useState(currentMonthValue())
+  const { from, to } = monthRange(month)
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["accounting", "dashboard"],
-    queryFn: () => api.dashboard(),
+    queryKey: ["accounting", "dashboard", month],
+    queryFn: () => api.dashboard(from, to),
   })
 
   if (isLoading) {
@@ -111,17 +117,20 @@ export function DashboardSection() {
         </div>
       </div>
 
-      {/* Profit this month */}
+      {/* Profit for the selected month */}
       <div>
-        <div className="mb-2 flex items-center gap-x-2">
-          <Text size="small" weight="plus" className="text-ui-fg-subtle">
-            Profit this month
-          </Text>
-          <Badge size="2xsmall">
-            {new Date(p.range.from).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-            {" – "}
-            {new Date(p.range.to).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-          </Badge>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-x-2">
+            <Text size="small" weight="plus" className="text-ui-fg-subtle">
+              Profit for the month
+            </Text>
+            <Badge size="2xsmall">
+              {new Date(p.range.from).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              {" – "}
+              {new Date(p.range.to).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </Badge>
+          </div>
+          <MonthSelect value={month} onChange={setMonth} />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Kpi label="Revenue" value={money(p.revenue, cur)} />

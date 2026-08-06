@@ -61,7 +61,9 @@
 
 @layer components {
   .content-container {
-    @apply max-w-[1440px] w-full mx-auto px-6;
+    /* Widen on large monitors so big screens aren't mostly empty margin; a 1440px MacBook is
+       unaffected (w-full caps it to the viewport). */
+    @apply max-w-[1440px] w-full mx-auto px-6 large:max-w-[1600px] xlarge:max-w-[1780px] 2xlarge:max-w-[1880px];
   }
 
   .contrast-btn {
@@ -132,8 +134,8 @@ html.cart-drawer-open {
 }
 /* Menu opens from left → page pushes RIGHT */
 html.mobile-menu-open #page-wrapper { transform: translateX(300px); }
-/* Cart opens from right → page pushes LEFT */
-html.cart-drawer-open #page-wrapper { transform: translateX(-300px); }
+/* Cart opens from right → page pushes LEFT (by the drawer's width) */
+html.cart-drawer-open #page-wrapper { transform: translateX(calc(-1 * var(--cart-drawer-w))); }
 
 /* Menu drawer — LEFT side */
 .mobile-menu-drawer {
@@ -151,15 +153,18 @@ html.cart-drawer-open #page-wrapper { transform: translateX(-300px); }
 }
 html.mobile-menu-open .mobile-menu-drawer { transform: translateX(0); }
 
-/* Cart drawer — RIGHT side */
+/* Cart drawer — RIGHT side. Wider on desktop; still comfortable on mobile. */
+:root { --cart-drawer-w: min(88vw, 360px); }
+@media (min-width: 1024px) { :root { --cart-drawer-w: 440px; } }
+
 .mobile-cart-drawer {
   position: fixed;
   top: 0;
   right: 0;
-  width: 300px;
+  width: var(--cart-drawer-w);
   height: 100dvh;
   z-index: 60;
-  transform: translateX(300px);
+  transform: translateX(var(--cart-drawer-w));
   transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   overflow-y: auto;
   background: #ffffff;

@@ -22,6 +22,7 @@ import { useState } from "react"
 import { Kpi, money } from "../../../lib/kpi"
 import { usePermissions } from "../../../lib/permissions"
 import { api, type LedgerEntry } from "../lib/api"
+import { MonthSelect, monthRange } from "../lib/month-filter"
 import {
   CATEGORY_META,
   KLASS_BADGE,
@@ -33,9 +34,12 @@ export function CashBookSection() {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
 
+  const [month, setMonth] = useState("all")
+  const { from, to } = monthRange(month)
+
   const { data, isLoading } = useQuery({
-    queryKey: ["accounting", "ledger"],
-    queryFn: () => api.ledger({ limit: 100 }),
+    queryKey: ["accounting", "ledger", month],
+    queryFn: () => api.ledger({ limit: 100, from, to }),
   })
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["accounting"] })
@@ -62,9 +66,12 @@ export function CashBookSection() {
             <b> auto</b>. Use "Record movement" only for partner capital in and out.
           </Text>
         </div>
-        <Button size="small" variant="secondary" onClick={() => setOpen(true)}>
-          <Plus /> Record movement
-        </Button>
+        <div className="flex items-center gap-2">
+          <MonthSelect value={month} onChange={setMonth} includeAll />
+          <Button size="small" variant="secondary" onClick={() => setOpen(true)}>
+            <Plus /> Record movement
+          </Button>
+        </div>
       </div>
 
       {data && (

@@ -22,20 +22,16 @@ import { Button, clx } from "@modules/common/components/ui"
 import DiscountCode from "@modules/checkout/components/discount-code"
 import CitySelect from "@modules/checkout/components/city-select"
 import LineItemOptions from "@modules/common/components/line-item-options"
+import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import Thumbnail from "@modules/products/components/thumbnail"
 import brand from "brand.config"
 import { useParams, useRouter } from "next/navigation"
-import { useMemo, useState } from "react"
+import { ReactNode, useMemo, useState } from "react"
 
 /**
  * Single-page ("flat") checkout — everything on one screen, one Place Order button, no step hops.
- *
- * Left column: order review (editable) + shipping address.
- * Right column: payment method, coupon, totals (with live delivery cost), notes, terms, Place Order.
- *
- * Supported payment methods here are Cash on Delivery (manual) and the redirect gateways
- * (SSLCommerz / bKash). Card/Stripe is intentionally not offered on this flat page — it needs an
- * inline card element + Elements context, which is a separate follow-up.
+ * Supports Cash on Delivery (manual) and the redirect gateways (SSLCommerz / bKash). Card/Stripe is
+ * intentionally not offered here (needs an inline card element — a separate follow-up).
  */
 
 type Props = {
@@ -80,7 +76,6 @@ const CheckoutFlat = ({
   )
   const [terms, setTerms] = useState(false)
 
-  // Cash on delivery selected by default — the common case for this store.
   const supportedMethods = useMemo(
     () => availablePaymentMethods.filter((m) => !isStripeLike(m.id)),
     [availablePaymentMethods]
@@ -188,7 +183,7 @@ const CheckoutFlat = ({
           : {}),
       } as HttpTypes.StoreUpdateCart)
 
-      // 2. Apply the single Standard Delivery option (its calculated price = district + quantity).
+      // 2. Apply the single Standard Delivery option (calculated: district + quantity).
       await setShippingMethod({
         cartId: cart.id,
         shippingMethodId: standardOption.id,
@@ -232,9 +227,9 @@ const CheckoutFlat = ({
       <div className="content-container py-16 text-center">
         <p className="text-ui-fg-subtle">
           Your cart is empty.{" "}
-          <a href={`/${countryCode}/store`} className="underline font-medium">
+          <LocalizedClientLink href="/store" className="underline font-medium">
             Continue shopping
-          </a>
+          </LocalizedClientLink>
         </p>
       </div>
     )
@@ -242,14 +237,27 @@ const CheckoutFlat = ({
 
   return (
     <div className="content-container py-8">
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-8 items-start">
+      <h1 className="text-2xl font-bold mb-6 text-[var(--brand-text)]">Checkout</h1>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px] xlarge:grid-cols-[minmax(0,1fr)_440px] gap-6 items-start">
         {/* LEFT — order review + address */}
         <div className="flex flex-col gap-6">
           {/* Order review */}
-          <section className="rounded-xl border border-ui-border-base bg-white p-5">
-            <h2 className="text-lg font-semibold mb-4 border-l-4 border-[var(--brand-primary)] pl-2">
-              Order review
-            </h2>
+          <SectionCard
+            title="Order review"
+            icon={<BagIcon />}
+            right={
+              <LocalizedClientLink
+                href="/cart"
+                className="ml-auto flex items-center gap-1 text-sm font-semibold text-[var(--brand-primary)] hover:opacity-80"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+                </svg>
+                Back to cart
+              </LocalizedClientLink>
+            }
+          >
             <div className="flex flex-col divide-y divide-ui-border-base">
               {items
                 .slice()
@@ -262,11 +270,11 @@ const CheckoutFlat = ({
                     <div
                       key={item.id}
                       className={clx(
-                        "flex items-center gap-3 py-3",
+                        "flex items-center gap-3 py-3 first:pt-0",
                         busy && "opacity-50 pointer-events-none"
                       )}
                     >
-                      <div className="w-16 h-16 shrink-0">
+                      <div className="w-16 h-16 shrink-0 rounded-lg overflow-hidden border border-ui-border-base">
                         <Thumbnail
                           thumbnail={item.thumbnail}
                           images={item.variant?.product?.images}
@@ -279,8 +287,7 @@ const CheckoutFlat = ({
                         </p>
                         <LineItemOptions variant={item.variant} />
                       </div>
-                      {/* Qty stepper */}
-                      <div className="flex items-center border border-ui-border-base rounded-lg overflow-hidden">
+                      <div className="flex items-center rounded-lg border border-ui-border-base overflow-hidden">
                         <button
                           type="button"
                           onClick={() => changeQty(item.id, item.quantity - 1)}
@@ -310,7 +317,7 @@ const CheckoutFlat = ({
                         type="button"
                         onClick={() => removeLine(item.id)}
                         disabled={busy}
-                        className="text-ui-tag-red-text hover:text-ui-tag-red-text/80 shrink-0"
+                        className="text-ui-tag-red-text hover:opacity-80 shrink-0"
                         aria-label="Remove item"
                       >
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -321,13 +328,10 @@ const CheckoutFlat = ({
                   )
                 })}
             </div>
-          </section>
+          </SectionCard>
 
           {/* Shipping address */}
-          <section className="rounded-xl border border-ui-border-base bg-white p-5">
-            <h2 className="text-lg font-semibold mb-4 border-l-4 border-[var(--brand-primary)] pl-2">
-              Shipping address
-            </h2>
+          <SectionCard title="Shipping address" icon={<PinIcon />}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="First name" required value={addr.first_name} onChange={(v) => setField("first_name", v)} />
               <Field label="Last name" value={addr.last_name} onChange={(v) => setField("last_name", v)} />
@@ -353,17 +357,14 @@ const CheckoutFlat = ({
               </div>
               <Field label="Postal code" value={addr.postal_code} onChange={(v) => setField("postal_code", v)} />
             </div>
-          </section>
+          </SectionCard>
         </div>
 
         {/* RIGHT — payment, coupon, totals, notes, terms, place order */}
-        <div className="flex flex-col gap-6 lg:sticky lg:top-24">
+        <div className="flex flex-col gap-5 lg:sticky lg:top-24">
           {/* Payment method */}
-          <section className="rounded-xl border border-ui-border-base bg-white p-5">
-            <h2 className="text-lg font-semibold mb-4 border-l-4 border-[var(--brand-primary)] pl-2">
-              Payment method
-            </h2>
-            <div className="grid grid-cols-1 gap-2">
+          <SectionCard title="Payment method" icon={<CardIcon />}>
+            <div className="grid grid-cols-1 gap-2.5">
               {supportedMethods.map((m) => {
                 const info = paymentInfoMap[m.id]
                 const selected = payment === m.id
@@ -373,10 +374,10 @@ const CheckoutFlat = ({
                     type="button"
                     onClick={() => setPayment(m.id)}
                     className={clx(
-                      "flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-all",
+                      "flex items-center gap-3 rounded-xl border px-4 py-3.5 text-left transition-all",
                       selected
-                        ? "border-[var(--brand-primary)] bg-[#fffdf5] ring-2 ring-[var(--brand-primary)]/40"
-                        : "border-ui-border-base hover:border-ui-border-interactive"
+                        ? "border-[var(--brand-primary)] bg-[#fffdf5] ring-2 ring-[var(--brand-primary)]"
+                        : "border-ui-border-base hover:border-ui-border-interactive hover:bg-ui-bg-subtle"
                     )}
                     aria-pressed={selected}
                   >
@@ -386,12 +387,16 @@ const CheckoutFlat = ({
                     </span>
                     <span
                       className={clx(
-                        "w-4 h-4 rounded-full border-2 shrink-0",
+                        "w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center",
                         selected
-                          ? "border-[var(--brand-primary)] bg-[var(--brand-primary)]"
+                          ? "border-[var(--brand-primary)]"
                           : "border-ui-border-strong"
                       )}
-                    />
+                    >
+                      {selected && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-[var(--brand-primary)]" />
+                      )}
+                    </span>
                   </button>
                 )
               })}
@@ -401,15 +406,24 @@ const CheckoutFlat = ({
                 </p>
               )}
             </div>
-          </section>
+          </SectionCard>
 
-          {/* Coupon */}
-          <section className="rounded-xl border border-ui-border-base bg-white p-5">
+          {/* Promo — deliberately prominent */}
+          <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400 text-white">
+                <TagIcon />
+              </span>
+              <div>
+                <p className="text-sm font-bold text-amber-900">Have a promo code?</p>
+                <p className="text-xs text-amber-700">Apply it to save on your order.</p>
+              </div>
+            </div>
             <DiscountCode cart={cart} />
-          </section>
+          </div>
 
           {/* Totals */}
-          <section className="rounded-xl border border-ui-border-base bg-white p-5">
+          <SectionCard title="Order summary" icon={<ReceiptIcon />}>
             <div className="flex flex-col gap-2 text-sm">
               <Row label="Sub total" value={money(itemSubtotal)} />
               {discount > 0 && (
@@ -426,17 +440,23 @@ const CheckoutFlat = ({
                   {totalQty} item{totalQty === 1 ? "" : "s"}
                 </p>
               )}
-              <div className="border-t border-ui-border-base mt-2 pt-2 flex items-center justify-between">
-                <span className="font-semibold">Total</span>
-                <span className="font-bold text-base">{money(total)}</span>
+              <div className="border-t border-ui-border-base mt-2 pt-3 flex items-center justify-between">
+                <span className="font-semibold text-base">Total</span>
+                <span className="font-bold text-lg text-[var(--brand-primary)]">
+                  {money(total)}
+                </span>
               </div>
             </div>
-          </section>
+          </SectionCard>
 
-          {/* Special notes */}
-          <section className="rounded-xl border border-ui-border-base bg-white p-5">
-            <label className="block text-sm font-semibold mb-2">
-              Special notes <span className="text-ui-fg-muted font-normal">(optional)</span>
+          {/* Special notes — sleek + colored */}
+          <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5">
+            <label className="flex items-center gap-2 text-sm font-semibold text-sky-900 mb-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500 text-white">
+                <NoteIcon />
+              </span>
+              Special notes
+              <span className="text-sky-500 font-normal text-xs">(optional)</span>
             </label>
             <textarea
               value={notes}
@@ -444,21 +464,21 @@ const CheckoutFlat = ({
               rows={2}
               maxLength={90}
               placeholder="Any delivery instructions?"
-              className="w-full rounded-lg border border-ui-border-base p-2.5 text-sm outline-none focus:border-ui-border-interactive resize-none"
+              className="w-full rounded-xl border border-sky-200 bg-white p-3 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-200 resize-none"
             />
-            <p className="text-xs text-ui-fg-muted text-right mt-1">
+            <p className="text-xs text-sky-600 text-right mt-1">
               {notes.length} / 90 characters
             </p>
-          </section>
+          </div>
 
           {/* Terms + place order */}
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 rounded-2xl border border-ui-border-base bg-white p-5 shadow-sm">
             <label className="flex items-start gap-2 text-sm">
               <input
                 type="checkbox"
                 checked={terms}
                 onChange={(e) => setTerms(e.target.checked)}
-                className="mt-0.5 accent-[var(--brand-primary)]"
+                className="mt-0.5 accent-[var(--brand-primary)] w-4 h-4"
               />
               <span className="text-ui-fg-subtle">
                 I have read and agree to the {brand.storeName} Terms &amp;
@@ -474,7 +494,7 @@ const CheckoutFlat = ({
 
             <Button
               size="large"
-              className="w-full"
+              className="w-full !bg-[var(--brand-primary)] !text-gray-900 hover:!opacity-90"
               onClick={handlePlaceOrder}
               isLoading={submitting}
               disabled={!canPlace}
@@ -486,6 +506,39 @@ const CheckoutFlat = ({
         </div>
       </div>
     </div>
+  )
+}
+
+/* ── Section shell ───────────────────────────────────────────────────────── */
+
+function SectionCard({
+  title,
+  icon,
+  right,
+  children,
+}: {
+  title: string
+  icon: ReactNode
+  right?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section className="rounded-2xl border border-ui-border-base bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-2.5 mb-4">
+        <span
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--brand-primary)]"
+          style={{
+            backgroundColor:
+              "color-mix(in srgb, var(--brand-primary) 15%, white)",
+          }}
+        >
+          {icon}
+        </span>
+        <h2 className="text-base font-semibold">{title}</h2>
+        {right}
+      </div>
+      {children}
+    </section>
   )
 }
 
@@ -515,7 +568,7 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         required={required}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-ui-border-base bg-ui-bg-subtle px-3 py-2.5 text-sm outline-none focus:border-ui-border-interactive"
+        className="w-full rounded-xl border border-ui-border-base bg-ui-bg-subtle px-3 py-2.5 text-sm outline-none focus:border-[var(--brand-primary)] focus:ring-1 focus:ring-[var(--brand-primary)]"
       />
     </div>
   )
@@ -547,5 +600,40 @@ function Row({
     </div>
   )
 }
+
+/* ── Icons ───────────────────────────────────────────────────────────────── */
+
+const BagIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+  </svg>
+)
+const PinIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+)
+const CardIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path strokeLinecap="round" d="M3 10h18" />
+  </svg>
+)
+const ReceiptIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m-6 4h6m-6 4h4M5 3h14v18l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21V3z" />
+  </svg>
+)
+const TagIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5a2 2 0 011.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+  </svg>
+)
+const NoteIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+  </svg>
+)
 
 export default CheckoutFlat
