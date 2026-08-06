@@ -81,7 +81,7 @@ const BULK_LABEL: Partial<Record<OrderStatusKey, string>> = {
 }
 
 const OrderProcessingPage = () => {
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("production")
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [sourceFilter, setSourceFilter] = useState<"all" | "website" | "manual">("all")
   const [status, setStatus] = useState<OrderStatusKey | "all">("all")
   const [pending, setPending] = useState<PendingMove | null>(null)
@@ -789,7 +789,7 @@ const OrderProcessingPage = () => {
               label="Actual charge"
               value={feeDraft}
               onChange={setFeeDraft}
-              presets={[100, 150]}
+              presets={[105, 125, 155, 175, 225]}
               hint="Couriers usually revise this after weighing the parcel."
             />
           </div>
