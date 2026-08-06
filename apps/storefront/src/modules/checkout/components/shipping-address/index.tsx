@@ -6,6 +6,7 @@ import { mapKeys } from "lodash"
 import React, { useEffect, useMemo, useState } from "react"
 import AddressSelect from "../address-select"
 import CountrySelect from "../country-select"
+import CitySelect from "../city-select"
 
 const ShippingAddress = ({
   customer,
@@ -157,14 +158,15 @@ const ShippingAddress = ({
           required
           data-testid="shipping-postal-code-input"
         />
-        <Input
-          label="City"
+        {/* District drives the delivery charge (Dhaka vs elsewhere), so it's a required choice
+            from the fixed list of Bangladesh districts, not free text. */}
+        <CitySelect
           name="shipping_address.city"
           autoComplete="address-level2"
           value={formData["shipping_address.city"]}
           onChange={handleChange}
           required
-          data-testid="shipping-city-input"
+          data-testid="shipping-city-select"
         />
         <CountrySelect
           name="shipping_address.country_code"

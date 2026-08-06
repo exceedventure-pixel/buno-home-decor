@@ -132,6 +132,13 @@ module.exports = defineConfig({
             id: "courier",
             options: {},
           },
+          // Pricing-only provider for the calculated "Standard Delivery" option (district +
+          // quantity). Fulfillment is a no-op — courier booking stays a manual step.
+          {
+            resolve: "./src/modules/standardDelivery/provider",
+            id: "delivery",
+            options: {},
+          },
         ],
       },
     },

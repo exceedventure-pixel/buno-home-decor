@@ -305,6 +305,11 @@ export default function ProductActions({
               </div>
             </div>
           )}
+
+          {/* Bangla note — explains why heavy wooden items carry a delivery charge. */}
+          <p className="mt-3 text-xs font-medium leading-relaxed text-green-600">
+            ** আমাদের কাঠের পণ্য ওজনে ভারী হওয়ায় আমরা স্ট্যান্ডার্ড ডেলিভারি চার্জ রাখতে পারি না।
+          </p>
         </div>
 
         <MobileActions
