@@ -22,6 +22,12 @@ type ProductActionsProps = {
   storeSettings?: StoreContactSettings
 }
 
+// Buno's standard delivery policy, shown on the product page. Kept here (not store settings yet)
+// so the numbers are easy to find and change; note these are Buno-specific values.
+const DELIVERY_INSIDE_DHAKA = 100
+const DELIVERY_OUTSIDE_DHAKA = 150
+const DELIVERY_PER_EXTRA_QTY = 50
+
 const optionsAsKeymap = (
   variantOptions: HttpTypes.StoreProductVariant["options"]
 ) => {
@@ -41,16 +47,24 @@ export default function ProductActions({
   const searchParams = useSearchParams()
 
   const [options, setOptions] = useState<Record<string, string | undefined>>({})
+  // Which option groups the shopper has consciously chosen — drives the "please choose" nudge.
+  const [touchedOptions, setTouchedOptions] = useState<Set<string>>(new Set())
   const [isAdding, setIsAdding] = useState(false)
   const [isBuyingNow, setIsBuyingNow] = useState(false)
   const [quantity, setQuantity] = useState(1)
   const countryCode = useParams().countryCode as string
 
+  // Preselect a variant on load so the action buttons are usable immediately instead of greyed
+  // out. Prefer the first in-stock variant; fall back to the first variant if none report stock.
   useEffect(() => {
-    if (product.variants?.length === 1) {
-      const variantOptions = optionsAsKeymap(product.variants[0].options)
-      setOptions(variantOptions ?? {})
-    }
+    if (!product.variants?.length) return
+    const preferred =
+      product.variants.find((v) => {
+        if (!v.manage_inventory) return true
+        if (v.allow_backorder) return true
+        return (v.inventory_quantity || 0) > 0
+      }) ?? product.variants[0]
+    setOptions(optionsAsKeymap(preferred.options) ?? {})
   }, [product.variants])
 
   const selectedVariant = useMemo(() => {
@@ -62,6 +76,7 @@ export default function ProductActions({
   }, [product.variants, options])
 
   const setOptionValue = (optionId: string, value: string) => {
+    setTouchedOptions((prev) => new Set(prev).add(optionId))
     setOptions((prev) => ({ ...prev, [optionId]: value }))
   }
 
@@ -147,6 +162,7 @@ export default function ProductActions({
                   current={options[option.id]}
                   updateOption={setOptionValue}
                   title={option.title ?? ""}
+                  highlight={!touchedOptions.has(option.id)}
                   data-testid="product-options"
                   disabled={!!disabled || isAdding || isBuyingNow}
                 />
@@ -247,6 +263,47 @@ export default function ProductActions({
             </a>
           ) : (
             <div />
+          )}
+        </div>
+
+        {/* Delivery charges — standard policy, with a live estimate for the chosen quantity. */}
+        <div className="rounded-xl border border-ui-border-base bg-ui-bg-subtle p-4">
+          <div className="mb-2 flex items-center gap-x-2 text-sm font-semibold text-ui-fg-base">
+            <svg className="h-5 w-5 text-ui-fg-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H3v11m10 0H5m8 0h3m3 0h1v-3.28a1 1 0 00-.684-.948l-2.316-.772a1 1 0 01-.632-.632l-.79-2.37A1 1 0 0014.28 8H13m0 8V8" />
+            </svg>
+            Delivery charges
+          </div>
+          <div className="flex flex-col gap-1 text-sm text-ui-fg-subtle">
+            <div className="flex items-center justify-between">
+              <span>Inside Dhaka</span>
+              <span className="font-medium text-ui-fg-base">৳{DELIVERY_INSIDE_DHAKA}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Outside Dhaka</span>
+              <span className="font-medium text-ui-fg-base">৳{DELIVERY_OUTSIDE_DHAKA}</span>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-ui-fg-muted">
+            Each additional item adds ৳{DELIVERY_PER_EXTRA_QTY} to the order&apos;s delivery charge.
+          </p>
+          {quantity > 1 && (
+            <div className="mt-3 flex flex-col gap-1 border-t border-ui-border-base pt-2 text-sm">
+              <span className="text-xs font-medium text-ui-fg-subtle">Estimated for {quantity} items</span>
+              <div className="flex items-center justify-between">
+                <span className="text-ui-fg-subtle">Inside Dhaka</span>
+                <span className="font-semibold text-ui-fg-base">
+                  ৳{DELIVERY_INSIDE_DHAKA + DELIVERY_PER_EXTRA_QTY * (quantity - 1)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-ui-fg-subtle">Outside Dhaka</span>
+                <span className="font-semibold text-ui-fg-base">
+                  ৳{DELIVERY_OUTSIDE_DHAKA + DELIVERY_PER_EXTRA_QTY * (quantity - 1)}
+                </span>
+              </div>
+            </div>
           )}
         </div>
 

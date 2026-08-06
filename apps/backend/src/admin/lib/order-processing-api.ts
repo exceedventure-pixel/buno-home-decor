@@ -137,6 +137,8 @@ export type OrderRow = {
   customer: string
   currency_code: string
   order_type: OrderTypeKey
+  /** Where it came from — website (storefront) vs manual (Quick Order page). */
+  source: "website" | "manual"
   order_status: OrderStatusKey
   payment_status: PaymentStatusKey
   issue_status: IssueStatusKey

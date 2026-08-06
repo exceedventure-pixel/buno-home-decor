@@ -41,6 +41,9 @@ export type OrderEconomics = {
   // How it was sold — drives costing and which pipeline stages apply.
   order_type: OrderType
 
+  // Where it came from — website (storefront checkout) vs manual (Quick Order page).
+  source: "website" | "manual"
+
   // Statuses — all derived except the stage/issue we legitimately own.
   order_status: OrderStatus
   payment_status: OrderPaymentStatus
@@ -426,6 +429,9 @@ export async function computeOrderEconomics(
       currency_code: o.currency_code ?? "bdt",
 
       order_type: orderType,
+      // Older rows created before the source column existed read back as "website" (the DB default),
+      // which is the right assumption: manual orders are the exception and are stamped explicitly.
+      source: wf?.source === "manual" ? "manual" : "website",
       order_status: orderStatus,
       payment_status: paymentStatus,
       issue_status: issue,

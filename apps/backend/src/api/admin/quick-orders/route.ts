@@ -244,6 +244,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         {
           id: existing.id,
           order_type: orderType,
+          // Placed by staff, not through the storefront. The sync subscriber created this row as
+          // "website" on order.placed; correct it here (both branches, so it's right whichever ran).
+          source: "manual",
           is_cod: true,
           advance_amount: advance,
           production_freight: productionFreight,
@@ -254,6 +257,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         {
           order_id: orderId,
           order_type: orderType,
+          source: "manual",
           is_cod: true,
           advance_amount: advance,
           production_freight: productionFreight,

@@ -26,6 +26,18 @@ const OrderWorkflow = model
     order_type: model.enum([...ORDER_TYPES]).default("ready_stock"),
 
     /**
+     * WHERE it came from — website (customer placed it through the storefront) vs manual (staff
+     * created it on the Quick Order page: social / phone / in-store).
+     *
+     * Defaults to "website" on purpose: every order fires `order.placed`, and the sync subscriber
+     * creates this row before the quick-order route runs, so the row exists as "website" first and
+     * the quick-order route then overrides it to "manual". Any order NOT created through the Quick
+     * Order page therefore stays "website" — which is correct as long as manual orders are only
+     * ever placed there (not via Medusa's native Create Order flow).
+     */
+    source: model.enum(["website", "manual"]).default("website"),
+
+    /**
      * The stored stage — a step that exists purely inside the business. Once goods physically
      * ship, the effective status is derived from Medusa instead and this stops mattering.
      */

@@ -488,6 +488,25 @@
           ],
           "mappedType": "enum"
         },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": false,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": "'website'",
+          "comment": null,
+          "enumItems": [
+            "website",
+            "manual"
+          ],
+          "mappedType": "enum"
+        },
         "stage": {
           "name": "stage",
           "type": "text",

@@ -10,7 +10,7 @@ import { allowedTransitions, ORDER_STATUSES } from "../../../modules/orderProces
  * back too, so the tabs can show how much work is sitting in each stage.
  */
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
-  const { status, issue, payment, type, from, to } = req.query as Record<
+  const { status, issue, payment, type, source, from, to } = req.query as Record<
     string,
     string | undefined
   >
@@ -32,11 +32,15 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   for (const r of rows) counts[r.order_status] = (counts[r.order_status] ?? 0) + 1
   const type_counts = { ready_stock: 0, pre_order: 0, custom: 0 } as Record<string, number>
   for (const r of all) type_counts[r.order_type] = (type_counts[r.order_type] ?? 0) + 1
+  // Website vs manual, over the (type-scoped) rows so the tabs match what's on screen.
+  const source_counts = { website: 0, manual: 0 } as Record<string, number>
+  for (const r of rows) source_counts[r.source] = (source_counts[r.source] ?? 0) + 1
 
   let filtered = rows
   if (status) filtered = filtered.filter((r) => r.order_status === status)
   if (issue) filtered = filtered.filter((r) => r.issue_status === issue)
   if (payment) filtered = filtered.filter((r) => r.payment_status === payment)
+  if (source) filtered = filtered.filter((r) => r.source === source)
 
   filtered.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
 
@@ -50,6 +54,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     })),
     counts,
     type_counts,
+    source_counts,
     total: rows.length,
     totals: {
       revenue: filtered.reduce((s, r) => s + r.product_revenue, 0),

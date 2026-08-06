@@ -92,6 +92,9 @@ export async function createExchange(
 
   const [originalWf] = await opSvc.listOrderWorkflows({ order_id: originalOrderId })
   const orderType = originalWf?.order_type ?? "ready_stock"
+  // A replacement inherits how the original was sold AND where it came from, so an exchange for a
+  // manual order doesn't quietly reappear as a website order in the queue.
+  const orderSource = originalWf?.source === "manual" ? "manual" : "website"
   const isReadyStock = orderType === "ready_stock"
 
   /* 1. The wrong item goes back. Non-fatal: the replacement must still go out even if the original
@@ -159,11 +162,11 @@ export async function createExchange(
   const [replacementWf] = await opSvc.listOrderWorkflows({ order_id: replacementId })
   if (replacementWf) {
     await opSvc.updateOrderWorkflows([
-      { id: replacementWf.id, order_type: orderType, replaces_order_id: originalOrderId },
+      { id: replacementWf.id, order_type: orderType, source: orderSource, replaces_order_id: originalOrderId },
     ])
   } else {
     await opSvc.createOrderWorkflows([
-      { order_id: replacementId, order_type: orderType, replaces_order_id: originalOrderId },
+      { order_id: replacementId, order_type: orderType, source: orderSource, replaces_order_id: originalOrderId },
     ])
   }
   if (originalWf) {

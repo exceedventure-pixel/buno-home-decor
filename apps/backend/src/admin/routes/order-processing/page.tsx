@@ -82,6 +82,7 @@ const BULK_LABEL: Partial<Record<OrderStatusKey, string>> = {
 
 const OrderProcessingPage = () => {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("production")
+  const [sourceFilter, setSourceFilter] = useState<"all" | "website" | "manual">("all")
   const [status, setStatus] = useState<OrderStatusKey | "all">("all")
   const [pending, setPending] = useState<PendingMove | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -217,15 +218,29 @@ const OrderProcessingPage = () => {
     return everything.filter((r) => r.order_type === "pre_order" || r.order_type === "custom")
   }, [everything, typeFilter])
 
-  const counts = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const r of typeRows) m[r.order_status] = (m[r.order_status] ?? 0) + 1
-    return m
+  // Website vs manual counts, over the type-scoped rows so the tabs match the current type view.
+  const sourceCounts = useMemo(() => {
+    let website = 0
+    let manual = 0
+    for (const r of typeRows) r.source === "manual" ? manual++ : website++
+    return { website, manual }
   }, [typeRows])
 
+  // Then narrow by source (website / manual / all) before status.
+  const sourceRows = useMemo(
+    () => (sourceFilter === "all" ? typeRows : typeRows.filter((r) => r.source === sourceFilter)),
+    [typeRows, sourceFilter]
+  )
+
+  const counts = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const r of sourceRows) m[r.order_status] = (m[r.order_status] ?? 0) + 1
+    return m
+  }, [sourceRows])
+
   const rows = useMemo(
-    () => (status === "all" ? typeRows : typeRows.filter((r) => r.order_status === status)),
-    [typeRows, status]
+    () => (status === "all" ? sourceRows : sourceRows.filter((r) => r.order_status === status)),
+    [sourceRows, status]
   )
 
   /**
@@ -308,6 +323,35 @@ const OrderProcessingPage = () => {
           </Button>
         </div>
 
+        {/* Source filter — how the order came in. Website = placed by a customer through the
+            storefront; Manual = created by staff on the Quick Order page (phone / social / in-store). */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Text size="xsmall" className="text-ui-fg-muted mr-1">
+            Source
+          </Text>
+          <Button
+            size="small"
+            variant={sourceFilter === "all" ? "primary" : "secondary"}
+            onClick={() => setSourceFilter("all")}
+          >
+            All ({sourceCounts.website + sourceCounts.manual})
+          </Button>
+          <Button
+            size="small"
+            variant={sourceFilter === "website" ? "primary" : "secondary"}
+            onClick={() => setSourceFilter("website")}
+          >
+            Website ({sourceCounts.website})
+          </Button>
+          <Button
+            size="small"
+            variant={sourceFilter === "manual" ? "primary" : "secondary"}
+            onClick={() => setSourceFilter("manual")}
+          >
+            Manual ({sourceCounts.manual})
+          </Button>
+        </div>
+
         {/* Status tabs */}
         <div className="flex flex-wrap gap-1.5">
           <Button
@@ -315,7 +359,7 @@ const OrderProcessingPage = () => {
             variant={status === "all" ? "primary" : "secondary"}
             onClick={() => setStatus("all")}
           >
-            All ({typeRows.length})
+            All ({sourceRows.length})
           </Button>
           {ORDER_STATUS_ORDER.map((s) => (
             <Button
@@ -442,7 +486,17 @@ const OrderProcessingPage = () => {
                         {ORDER_TYPE_META[r.order_type].label}
                       </Badge>
                     </Table.Cell>
-                    <Table.Cell className="max-w-[140px] truncate sm:max-w-[180px]">{r.customer}</Table.Cell>
+                    <Table.Cell className="max-w-[140px] sm:max-w-[180px]">
+                      <div className="flex min-w-0 items-center gap-x-1.5">
+                        <span className="truncate">{r.customer}</span>
+                        {/* Website is the norm and left unlabelled; flag the manual ones. */}
+                        {r.source === "manual" && (
+                          <Badge size="2xsmall" color="orange">
+                            Manual
+                          </Badge>
+                        )}
+                      </div>
+                    </Table.Cell>
                     {/* Status is a dropdown, not a badge plus a separate "Move" menu: the thing you
                         want to change and the thing showing its value are the same control. */}
                     <Table.Cell onClick={(e) => e.stopPropagation()}>
