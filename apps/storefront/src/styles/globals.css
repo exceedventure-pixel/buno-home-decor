@@ -61,9 +61,9 @@
 
 @layer components {
   .content-container {
-    /* MacBook (~1440px) stays near-full at 1440px; larger PC monitors get ~90% of the viewport
+    /* MacBook (~1440px) stays near-full at 1440px; larger PC monitors get ~80% of the viewport
        instead of the near-full width that felt too wide. */
-    @apply max-w-[1440px] w-full mx-auto px-6 xlarge:max-w-[90vw];
+    @apply max-w-[1440px] w-full mx-auto px-6 xlarge:max-w-[80vw];
   }
 
   .contrast-btn {
