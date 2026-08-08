@@ -8,6 +8,15 @@ module.exports = {
     "./src/pages/**/*.{js,ts,jsx,tsx}",
     "./src/components/**/*.{js,ts,jsx,tsx}",
     "./src/modules/**/*.{js,ts,jsx,tsx}",
+    // src/lib holds GRID_CLASS (store-settings.ts) whose grid-cols literals must be scanned.
+    "./src/lib/**/*.{js,ts,jsx,tsx}",
+  ],
+  // Grid columns are chosen at runtime from the DB, so guarantee every combination is compiled —
+  // otherwise picking 5/6 desktop columns has no matching CSS and the grid falls back to 3.
+  safelist: [
+    "grid-cols-1", "grid-cols-2", "grid-cols-3",
+    "small:grid-cols-2", "small:grid-cols-3", "small:grid-cols-4",
+    "medium:grid-cols-3", "medium:grid-cols-4", "medium:grid-cols-5", "medium:grid-cols-6",
   ],
   theme: {
     extend: {
