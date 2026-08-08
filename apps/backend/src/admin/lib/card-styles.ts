@@ -84,7 +84,7 @@ export type CardBadgeSettings = {
 }
 
 export type CardGridColumns = { mobile: 1 | 2 | 3; tablet: 2 | 3 | 4; desktop: 3 | 4 | 5 | 6 }
-export const DEFAULT_GRID_COLUMNS: CardGridColumns = { mobile: 2, tablet: 3, desktop: 4 }
+export const DEFAULT_GRID_COLUMNS: CardGridColumns = { mobile: 2, tablet: 3, desktop: 5 }
 
 export const DEFAULT_BADGE_SETTINGS: CardBadgeSettings = {
   sale: true,

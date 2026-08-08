@@ -112,7 +112,7 @@ const CARD_DEFAULTS: StorefrontCardSettings = {
   card_action_mode: "navigate",
   card_badge_settings: DEFAULT_BADGE_SETTINGS,
   card_text_align: "center",
-  card_grid_columns: { mobile: 2, tablet: 3, desktop: 4 },
+  card_grid_columns: { mobile: 2, tablet: 3, desktop: 5 },
 }
 
 export async function getStorefrontCardSettings(): Promise<StorefrontCardSettings> {

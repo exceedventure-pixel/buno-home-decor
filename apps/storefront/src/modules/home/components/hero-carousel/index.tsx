@@ -223,9 +223,15 @@ function HeroCarouselSplit({
     >
       {/* ═══ MOBILE: full-width carousel, no arrows, aspect-ratio based ═══ */}
       <div className={`relative block sm:hidden overflow-hidden rounded-xl bg-[var(--brand-bg)] ${mAspect}`}>
-        {slides.map((slide, i) => (
-          <SplitSlide key={slide.id} slide={slide} i={i} current={current} overlay={overlay} compact />
-        ))}
+        {/* Sliding track — translated horizontally so slides move across, not crossfade. */}
+        <div
+          className="flex h-full transition-transform duration-500 ease-out"
+          style={{ transform: `translateX(-${current * 100}%)` }}
+        >
+          {slides.map((slide) => (
+            <SplitSlide key={slide.id} slide={slide} overlay={overlay} compact />
+          ))}
+        </div>
         {slides.length > 1 && <SlideDots slides={slides} current={current} setCurrent={setCurrent} />}
         <h2 className="sr-only">{title}</h2>
       </div>
@@ -233,13 +239,19 @@ function HeroCarouselSplit({
       {/* ═══ DESKTOP: side-by-side panels ═══ */}
       <div
         className="hidden sm:flex gap-3"
-        style={{ height: "clamp(300px, 50vh, 560px)" }}
+        style={{ height: "clamp(260px, 40vh, 460px)" }}
       >
         {/* Left: carousel */}
         <div className="relative flex-[63] overflow-hidden rounded-xl bg-[var(--brand-bg)]">
-          {slides.map((slide, i) => (
-            <SplitSlide key={slide.id} slide={slide} i={i} current={current} overlay={overlay} />
-          ))}
+          {/* Sliding track — horizontal slide between images. */}
+          <div
+            className="flex h-full transition-transform duration-500 ease-out"
+            style={{ transform: `translateX(-${current * 100}%)` }}
+          >
+            {slides.map((slide) => (
+              <SplitSlide key={slide.id} slide={slide} overlay={overlay} />
+            ))}
+          </div>
 
           {slides.length > 1 && (
             <>
@@ -317,24 +329,16 @@ function HeroCarouselSplit({
 
 function SplitSlide({
   slide,
-  i,
-  current,
   compact = false,
   overlay,
 }: {
   slide: HeroSlide
-  i: number
-  current: number
   compact?: boolean
   overlay?: { enabled: boolean; opacity: number }
 }) {
   return (
-    <div
-      className={[
-        "absolute inset-0 transition-opacity duration-700",
-        i === current ? "opacity-100" : "opacity-0 pointer-events-none",
-      ].join(" ")}
-    >
+    // A track item: full width, doesn't shrink, so the flex track lays slides out side by side.
+    <div className="relative w-full h-full shrink-0">
       <picture className="block w-full h-full">
         {slide.mobile_image_url && (
           <source media="(max-width: 768px)" srcSet={slide.mobile_image_url} />
