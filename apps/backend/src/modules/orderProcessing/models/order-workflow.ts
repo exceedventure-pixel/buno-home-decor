@@ -1,6 +1,6 @@
 import { model } from "@medusajs/framework/utils"
 
-import { ISSUE_STATUSES, ORDER_TYPES, STORED_STAGES } from "../constants"
+import { FAULTS, ISSUE_STATUSES, ORDER_TYPES, RESOLUTION_TYPES, STORED_STAGES } from "../constants"
 
 /**
  * The business layer on top of a Medusa order — and ONLY the parts Medusa doesn't already know.
@@ -43,8 +43,24 @@ const OrderWorkflow = model
      */
     stage: model.enum([...STORED_STAGES]).default("new_order"),
 
-    /** A human judgement Medusa can't make: did it come back damaged, or was it the wrong item? */
+    /** A human judgement Medusa can't make: did it come back damaged, or was it the wrong item?
+     *  Set as a BYPRODUCT of a resolution (see resolution_type) — never a bare label. */
     issue_status: model.enum([...ISSUE_STATUSES]).default("none"),
+
+    /**
+     * HOW an after-sales issue was resolved (return, exchange, refund, write-off, rebook…). The
+     * resolver sets this alongside issue_status; null means the order has had no issue resolved.
+     */
+    resolution_type: model.enum([...RESOLUTION_TYPES]).nullable(),
+
+    /** Whose fault it was — drives who bears delivery and whether the customer paid toward it. */
+    fault: model.enum([...FAULTS]).nullable(),
+
+    /**
+     * What the customer paid toward a return/exchange (e.g. return delivery). Offsets the courier
+     * loss in P&L: net delivery loss = courier_fee − customer_return_paid. As-is money, never cents.
+     */
+    customer_return_paid: model.bigNumber().default(0),
 
     /** Cash on delivery. Decides whether an unpaid order reads "Unpaid" or "Cash on Delivery". */
     is_cod: model.boolean().default(true),

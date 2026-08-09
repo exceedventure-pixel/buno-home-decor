@@ -310,11 +310,98 @@ export const ISSUE_STATUS_META: Record<
 }
 
 /**
- * Issue statuses are REASONS, not mechanisms.
+ * Issue statuses are REASONS, not mechanisms — they only record WHY.
  *
- * There used to be a `RESTOCKING_ISSUES` list here implying that setting "Wrong Product" or
- * "Exchange Requested" put goods back on the shelf. It never did — nothing read it. Restocking
- * happens through the explicit return/receive actions, and an exchange through the exchange
- * action; these labels only record WHY.
+ * The MECHANISM lives in RESOLUTION_TYPES below: resolving an issue performs the real action
+ * (restock, refund, exchange, write-off, rebook) and sets issue_status as a byproduct, so an
+ * issue is never a bare label that changes nothing.
  */
+
+/* ----------------------------------- resolutions ----------------------------------- */
+
+/**
+ * WHO caused the problem — drives who bears the delivery cost and whether the customer paid
+ * anything toward the return.
+ *   our_fault — we shipped wrong/damaged: a free reship, no customer charge.
+ *   customer  — changed mind / refused / ordered by mistake: they may bear delivery.
+ */
+export const FAULTS = ["our_fault", "customer"] as const
+export type Fault = (typeof FAULTS)[number]
+
+/**
+ * HOW an order issue is resolved. Each maps to a real action (see the resolve workflow) and, as a
+ * byproduct, an issue_status. This is the single control surface for after-sales.
+ */
+export const RESOLUTION_TYPES = [
+  "rebook_courier",
+  "return_only",
+  "return_refund",
+  "exchange",
+  "rto_refused",
+  "damaged_in_transit",
+  "damaged_on_return",
+  "wrong_slip_correction",
+] as const
+export type ResolutionType = (typeof RESOLUTION_TYPES)[number]
+
+export const RESOLUTION_META: Record<
+  ResolutionType,
+  { label: string; help: string }
+> = {
+  rebook_courier: {
+    label: "Rebook courier (missed pickup)",
+    help: "The pickup was missed. Book the same parcel again for the next day. No money moves.",
+  },
+  return_only: {
+    label: "Return (COD, no money back)",
+    help: "Parcel comes back and restocks. Nothing was paid, so nothing is refunded; the outbound courier fee is the loss.",
+  },
+  return_refund: {
+    label: "Return & refund advance",
+    help: "Parcel comes back and restocks, and a paid advance is returned to the customer.",
+  },
+  exchange: {
+    label: "Exchange (send a replacement)",
+    help: "The wrong/faulty item comes back; the correct one ships as its own order. Free delivery if it was our mistake.",
+  },
+  rto_refused: {
+    label: "Refused / returned to origin",
+    help: "The customer refused the parcel at the door. It returns and restocks; the outbound courier fee is the loss.",
+  },
+  damaged_in_transit: {
+    label: "Damaged in transit (write off)",
+    help: "Destroyed on the way — NOT restocked. Written off at cost; record any courier compensation as Other income.",
+  },
+  damaged_on_return: {
+    label: "Came back damaged",
+    help: "Returned but arrived broken. It restocks, then is written off as damage — so the loss shows as shrinkage, not a phantom sale.",
+  },
+  wrong_slip_correction: {
+    label: "Wrong packing slip (goods correct)",
+    help: "The right product shipped with the wrong paperwork. Nothing moves in stock or cash — just recorded.",
+  },
+}
+
+/**
+ * The issue_status a resolution leaves on the order. Exchange depends on fault: our mistake reads
+ * as "wrong_product", a customer swap as "exchange_requested".
+ */
+export function issueForResolution(resolution: ResolutionType, fault?: Fault | null): IssueStatus {
+  switch (resolution) {
+    case "return_only":
+    case "rto_refused":
+    case "damaged_on_return":
+      return "returned"
+    case "return_refund":
+      return "refunded"
+    case "exchange":
+      return fault === "customer" ? "exchange_requested" : "wrong_product"
+    case "damaged_in_transit":
+      return "damaged"
+    case "rebook_courier":
+    case "wrong_slip_correction":
+    default:
+      return "none"
+  }
+}
 

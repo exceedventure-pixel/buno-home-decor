@@ -24,7 +24,21 @@ jest.mock("../inventory/stock-location", () => ({
 const containerWith = (order: any) =>
   ({
     resolve: () => ({
-      graph: async () => ({ data: order ? [order] : [] }),
+      graph: async (q: any) => {
+        // The return option lookup runs its own shipping_option query.
+        if (q?.entity === "shipping_option") {
+          return {
+            data: [
+              {
+                id: "so_return",
+                name: "Return Delivery",
+                rules: [{ attribute: "is_return", value: "true" }],
+              },
+            ],
+          }
+        }
+        return { data: order ? [order] : [] }
+      },
     }),
   }) as any
 
@@ -51,6 +65,7 @@ describe("returnAndRestockOrder", () => {
         order_id: "o1",
         items: [{ id: "i1", quantity: 2 }],
         location_id: "sloc_canonical",
+        return_shipping: { option_id: "so_return", price: 0 },
         receive_now: false,
       },
     })
@@ -67,6 +82,7 @@ describe("returnAndRestockOrder", () => {
         order_id: "o1",
         items: [{ id: "i1", quantity: 2 }],
         location_id: "sloc_canonical",
+        return_shipping: { option_id: "so_return", price: 0 },
         receive_now: false,
       },
     })
@@ -88,6 +104,7 @@ describe("returnAndRestockOrder", () => {
         order_id: "o1",
         items: [{ id: "i1", quantity: 3 }],
         location_id: "sloc_canonical",
+        return_shipping: { option_id: "so_return", price: 0 },
         receive_now: false,
       },
     })
@@ -128,6 +145,7 @@ describe("returnAndRestockOrder", () => {
         order_id: "o1",
         items: [{ id: "i1", quantity: 2 }],
         location_id: "sloc_canonical",
+        return_shipping: { option_id: "so_return", price: 0 },
         receive_now: true,
       },
     })

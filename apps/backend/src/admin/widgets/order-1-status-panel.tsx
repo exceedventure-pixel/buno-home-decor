@@ -251,19 +251,6 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
     onError: (e: Error) => toast.error(e.message),
   })
 
-  const setIssue = useMutation({
-    mutationFn: (issue: IssueStatusKey) => opApi.update(orderId, { issue_status: issue }),
-    onSuccess: (_r, issue) => {
-      toast.success(
-        issue === "damaged"
-          ? "Marked damaged — the goods were written off at cost, not restocked"
-          : "Issue updated"
-      )
-      refresh()
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-
   // These take the value from the ChargeRow's own draft (mutateAsync(n)) rather than panel state.
   const saveFee = useMutation({
     mutationFn: (v: number) => opApi.update(orderId, { courier_fee: v }),
@@ -638,28 +625,8 @@ const OrderStatusPanel = ({ data: order }: DetailWidgetProps<HttpTypes.AdminOrde
         )}
       </div>
 
-      {/* Issue */}
-      <div className="flex flex-col gap-y-2 border-t border-ui-border-base pt-4">
-        <div className="flex items-center gap-x-1.5">
-          <Label size="small">Issue</Label>
-          <InfoHint text="Damaged writes the goods off at cost — they are not put back on the shelf, because they no longer exist." />
-        </div>
-        <Select
-          value={o.issue_status}
-          onValueChange={(v) => setIssue.mutate(v as IssueStatusKey)}
-        >
-          <Select.Trigger>
-            <Select.Value />
-          </Select.Trigger>
-          <Select.Content>
-            {(Object.keys(ISSUE_STATUS_META) as IssueStatusKey[]).map((k) => (
-              <Select.Item key={k} value={k}>
-                {ISSUE_STATUS_META[k].label}
-              </Select.Item>
-            ))}
-          </Select.Content>
-        </Select>
-      </div>
+      {/* Issue is now a read-only badge (shown in the header above). It's set as a byproduct of
+          resolving an issue in the "After the Sale" widget — never a bare label that does nothing. */}
 
       {/* This order's P&L — the headline number; the breakdown sits behind the ⓘ. */}
       <div className="flex items-center justify-between gap-x-2 rounded-lg bg-ui-bg-subtle p-3">

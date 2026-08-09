@@ -15,6 +15,7 @@ import {
   type SetIssueInput,
   type TransitionInput,
 } from "./steps/transition"
+import { resolveOrderIssueStep, type ResolveIssueInput } from "./steps/resolve"
 
 /**
  * Move an order through the pipeline. The status change IS the action — see steps/transition.ts.
@@ -32,6 +33,18 @@ export const setOrderIssueWorkflow = createWorkflow(
   "set-order-issue",
   function (input: SetIssueInput) {
     const result = setOrderIssueStep(input)
+    return new WorkflowResponse(result)
+  }
+)
+
+/**
+ * Resolve an after-sales issue — the one flow that performs the real action (return, refund,
+ * exchange, write-off, rebook) AND records issue_status/resolution/fault/customer_return_paid.
+ */
+export const resolveOrderIssueWorkflow = createWorkflow(
+  "resolve-order-issue",
+  function (input: ResolveIssueInput) {
+    const result = resolveOrderIssueStep(input)
     return new WorkflowResponse(result)
   }
 )

@@ -13,6 +13,34 @@ export type ReturnRestockResult = {
 }
 
 /**
+ * Find the store's internal return shipping option (is_return = true).
+ *
+ * Medusa's return workflow always creates a return fulfillment, which needs a return shipping
+ * option — without one it throws "shippingOption - id must be defined". We create a ৳0 one via
+ * setup-return-delivery.ts; this locates it (by its is_return rule, falling back to name) so the
+ * throw becomes a clear, actionable message instead of Medusa's cryptic one.
+ */
+async function resolveReturnShippingOptionId(container: any): Promise<string> {
+  const query = container.resolve(ContainerRegistrationKeys.QUERY)
+  const { data: options } = await query.graph({
+    entity: "shipping_option",
+    fields: ["id", "name", "rules.attribute", "rules.value"],
+  })
+
+  const byRule = (options ?? []).find((o: any) =>
+    (o.rules ?? []).some((r: any) => r.attribute === "is_return" && r.value === "true")
+  )
+  const match = byRule ?? (options ?? []).find((o: any) => o.name === "Return Delivery")
+
+  if (!match) {
+    throw new Error(
+      "No return shipping option is configured. Run: npx medusa exec ./src/migration-scripts/setup-return-delivery.ts"
+    )
+  }
+  return match.id
+}
+
+/**
  * Creates AND receives a native Medusa return for the whole order, which
  * restocks the returned items' inventory. No refund is issued (restock only).
  *
@@ -88,6 +116,16 @@ export async function returnAndRestockOrder(
   const location = await requireSellableLocation(container)
 
   /**
+   * TELL MEDUSA WHICH RETURN OPTION TO USE.
+   *
+   * The workflow unconditionally builds a return fulfillment from `return_shipping.option_id`.
+   * Passing it (with `price: 0`) both sets the return method to ৳0 AND avoids the
+   * `calculated_price` dereference that would otherwise blow up — the real fix for the old
+   * "shippingOption - id must be defined" error, which `location_id` alone never solved.
+   */
+  const returnOptionId = await resolveReturnShippingOptionId(container)
+
+  /**
    * RECEIVING IS A SEPARATE MOMENT FROM RETURNING.
    *
    * `receive_now: false` records that the parcel is coming back WITHOUT putting the units on the
@@ -103,6 +141,7 @@ export async function returnAndRestockOrder(
       order_id: orderId,
       items,
       location_id: location.id,
+      return_shipping: { option_id: returnOptionId, price: 0 },
       receive_now: receiveNow,
     },
   })

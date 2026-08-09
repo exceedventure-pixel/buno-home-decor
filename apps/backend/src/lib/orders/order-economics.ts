@@ -65,10 +65,12 @@ export type OrderEconomics = {
   /** Goods destroyed in transit — a real loss, never restocked. */
   write_off: number
 
-  /** What delivery actually made or lost: charged − courier cost. The "overcharge". */
+  /** What delivery actually made or lost: charged − courier cost + customer_return_paid. */
   delivery_margin: number
   /** Revenue − every cost above. The only number that says whether the parcel was worth sending. */
   net_profit: number
+  /** What the customer paid toward a return/exchange — offsets the courier loss in the figures above. */
+  customer_return_paid: number
 
   // Cash
   captured: number
@@ -361,7 +363,15 @@ export async function computeOrderEconomics(
      * Deriving this from retained cash also means "we'll collect the delivery from them later"
      * needs no flag: the day that cash is recorded, the delivery revenue appears on its own.
      */
-    const goodsDestroyed = issue === "damaged"
+    /**
+     * "Damaged" has two meanings that must not collide:
+     *   destroyed IN TRANSIT — nothing came back → treat as a lost sale (revenue 0, write off cogs).
+     *   came back DAMAGED     — units returned (unitsComingBack>0) → revenue reverses via
+     *                           returnedValue and FIFO reverses cogs on receipt; the destruction is
+     *                           booked separately as shrinkage. Flagging goodsDestroyed here too
+     *                           would zero revenue AND write off cogs a second time — a double loss.
+     */
+    const goodsDestroyed = issue === "damaged" && unitsComingBack === 0
 
     if (facts.canceled && unitsShipped === 0) {
       productRevenue = 0
@@ -401,20 +411,24 @@ export async function computeOrderEconomics(
     const courierCost = num(wf?.courier_fee)
 
     /**
-     * The value of goods destroyed in transit — REPORTED, not charged again.
-     *
-     * These units left the shelf on this order, so `cogs` has already counted them exactly once.
-     * Subtracting write_off on top charged the same physical units twice: a ৳1000 order whose
-     * ৳400 of goods were destroyed booked full revenue AND ৳800 of cost, and reported +৳200
-     * PROFIT on a parcel that lost ৳400. Revenue is zeroed above (nobody received anything), so
-     * `− cogs` alone is the loss, and this figure is here to show what it was worth.
+     * What the customer paid toward a return/exchange (e.g. return delivery). Per the owner's rule,
+     * it OFFSETS the delivery loss we bore: net delivery loss = courier_fee − customer_return_paid.
+     * It can exceed the courier fee (a net delivery gain) — that's accurate, not clamped.
      */
-    const writeOff = issue === "damaged" ? cogs : 0
+    const customerReturnPaid = num(wf?.customer_return_paid)
 
-    const deliveryMargin = deliveryCharged - courierCost
+    /**
+     * The value of goods destroyed IN TRANSIT — REPORTED, not charged again (cogs already counted
+     * these units once, and revenue is zeroed above, so `− cogs` alone is the loss). Only when
+     * nothing came back: a parcel that returned and was then written off books its loss as
+     * shrinkage on receipt, so counting it here as well would double it.
+     */
+    const writeOff = goodsDestroyed ? cogs : 0
+
+    const deliveryMargin = deliveryCharged - courierCost + customerReturnPaid
     // Packaging is deliberately absent: it's expensed when bought (a period cost in the Cash
     // Book), not allocated per order.
-    const netProfit = productRevenue + deliveryCharged - cogs - courierCost
+    const netProfit = productRevenue + deliveryCharged - cogs - courierCost + customerReturnPaid
 
     const name =
       [o.shipping_address?.first_name, o.shipping_address?.last_name].filter(Boolean).join(" ") ||
@@ -449,6 +463,8 @@ export async function computeOrderEconomics(
 
       delivery_margin: deliveryMargin,
       net_profit: netProfit,
+      /** What the customer paid toward a return/exchange — offsets the courier loss. */
+      customer_return_paid: customerReturnPaid,
 
       captured,
       refunded,

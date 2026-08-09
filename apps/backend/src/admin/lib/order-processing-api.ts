@@ -153,6 +153,8 @@ export type OrderRow = {
   write_off: number
   delivery_margin: number
   net_profit: number
+  /** What the customer paid toward a return/exchange — offsets the courier loss. */
+  customer_return_paid: number
   captured: number
   refunded: number
   outstanding: number
@@ -186,6 +188,53 @@ export type StatusEvent = {
   source: string
   note: string | null
   created_at: string
+}
+
+export type ResolutionKey =
+  | "rebook_courier" | "return_only" | "return_refund" | "exchange"
+  | "rto_refused" | "damaged_in_transit" | "damaged_on_return" | "wrong_slip_correction"
+
+export type FaultKey = "our_fault" | "customer"
+
+/** Mirrors RESOLUTION_META in modules/orderProcessing/constants.ts — display layer only. */
+export const RESOLUTION_META: Record<ResolutionKey, { label: string; help: string }> = {
+  rebook_courier: {
+    label: "Missed pickup — rebook courier",
+    help: "Book the same parcel again for the next day. No money moves.",
+  },
+  return_only: {
+    label: "Returned (COD — no money back)",
+    help: "Parcel comes back and restocks. Nothing was paid, so nothing is refunded; the outbound courier fee is the loss.",
+  },
+  return_refund: {
+    label: "Return & refund advance",
+    help: "Parcel comes back and restocks, and a paid advance is returned to the customer.",
+  },
+  exchange: {
+    label: "Send a replacement (exchange)",
+    help: "The wrong/faulty item comes back; the correct one ships as its own order. Free delivery if it was our mistake.",
+  },
+  rto_refused: {
+    label: "Refused at door (RTO)",
+    help: "The customer refused the parcel. It returns and restocks; the outbound courier fee is the loss.",
+  },
+  damaged_in_transit: {
+    label: "Damaged in transit (write off)",
+    help: "Destroyed on the way — NOT restocked. Written off at cost.",
+  },
+  damaged_on_return: {
+    label: "Came back damaged",
+    help: "Returned but arrived broken. It restocks, then is written off as damage — the loss shows as shrinkage.",
+  },
+  wrong_slip_correction: {
+    label: "Wrong packing slip (goods correct)",
+    help: "Right product, wrong paperwork. Nothing moves in stock or cash — just recorded.",
+  },
+}
+
+export const FAULT_META: Record<FaultKey, { label: string }> = {
+  our_fault: { label: "Our mistake" },
+  customer: { label: "Customer's choice" },
 }
 
 export const opApi = {

@@ -98,10 +98,18 @@ export async function createExchange(
   const isReadyStock = orderType === "ready_stock"
 
   /* 1. The wrong item goes back. Non-fatal: the replacement must still go out even if the original
-        can't be returned (already returned, nothing shipped) — the reason is reported instead. */
-  const back = await returnAndRestockOrder(container, originalOrderId, {
-    receiveNow: opts.receive_now ?? false,
-  })
+        can't be returned (already returned, nothing shipped, or the return itself errors) — the
+        reason is reported instead of aborting the whole exchange and orphaning the customer. */
+  let back: { created: boolean; items: number; reason?: string }
+  try {
+    back = await returnAndRestockOrder(container, originalOrderId, {
+      receiveNow: opts.receive_now ?? false,
+    })
+  } catch (err: any) {
+    const logger = container.resolve("logger") as any
+    logger?.warn(`[exchange] Return leg failed for ${originalOrderId}: ${err.message}`)
+    back = { created: false, items: 0, reason: err.message }
+  }
 
   /* 2. The correct item ships as its own order. */
   const addr = original.shipping_address ?? {}
