@@ -1,6 +1,7 @@
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import {
   createAndCompleteReturnOrderWorkflow,
+  createShippingOptionsWorkflow,
   receiveAndCompleteReturnOrderWorkflow,
 } from "@medusajs/core-flows"
 
@@ -13,31 +14,71 @@ export type ReturnRestockResult = {
 }
 
 /**
- * Find the store's internal return shipping option (is_return = true).
+ * Find — or CREATE — the store's internal return shipping option (is_return = true).
  *
  * Medusa's return workflow always creates a return fulfillment, which needs a return shipping
- * option — without one it throws "shippingOption - id must be defined". We create a ৳0 one via
- * setup-return-delivery.ts; this locates it (by its is_return rule, falling back to name) so the
- * throw becomes a clear, actionable message instead of Medusa's cryptic one.
+ * option — without one it throws the cryptic "shippingOption - id must be defined". Rather than
+ * depend on someone remembering to run a setup script, this provisions the ৳0 option on first use:
+ * it looks for one (by its is_return rule, then by name) and, if none exists, creates it by
+ * borrowing the service zone / profile / provider from an existing outbound option. Idempotent and
+ * self-healing, so returns simply work after deploy with no manual step.
  */
-async function resolveReturnShippingOptionId(container: any): Promise<string> {
+async function ensureReturnShippingOption(container: any): Promise<string> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const { data: options } = await query.graph({
     entity: "shipping_option",
-    fields: ["id", "name", "rules.attribute", "rules.value"],
+    fields: [
+      "id",
+      "name",
+      "provider_id",
+      "service_zone_id",
+      "shipping_profile_id",
+      "rules.attribute",
+      "rules.value",
+    ],
   })
 
   const byRule = (options ?? []).find((o: any) =>
-    (o.rules ?? []).some((r: any) => r.attribute === "is_return" && r.value === "true")
+    (o.rules ?? []).some((r: any) => r.attribute === "is_return" && String(r.value) === "true")
   )
-  const match = byRule ?? (options ?? []).find((o: any) => o.name === "Return Delivery")
+  const existing = byRule ?? (options ?? []).find((o: any) => o.name === "Return Delivery")
+  if (existing) return existing.id
 
-  if (!match) {
+  // None yet — create it, borrowing the zone/profile/provider from an existing outbound option so
+  // returns land in the one canonical warehouse (same fulfillment set the store ships from).
+  const template = (options ?? []).find(
+    (o: any) => o.service_zone_id && o.shipping_profile_id && o.provider_id
+  )
+  if (!template) {
     throw new Error(
-      "No return shipping option is configured. Run: npx medusa exec ./src/migration-scripts/setup-return-delivery.ts"
+      "Cannot record a return: no delivery shipping option exists to base the return option on. Set up delivery first."
     )
   }
-  return match.id
+
+  const { result } = await createShippingOptionsWorkflow(container).run({
+    input: [
+      {
+        name: "Return Delivery",
+        price_type: "flat",
+        provider_id: template.provider_id,
+        service_zone_id: template.service_zone_id,
+        shipping_profile_id: template.shipping_profile_id,
+        type: {
+          label: "Return",
+          description: "Internal option for recording returns. Never shown at checkout.",
+          code: "return-delivery",
+        },
+        prices: [{ currency_code: "bdt", amount: 0 }],
+        rules: [
+          { attribute: "is_return", value: "true", operator: "eq" },
+          { attribute: "enabled_in_store", value: "false", operator: "eq" },
+        ],
+      },
+    ] as any,
+  })
+
+  const created = Array.isArray(result) ? result[0] : result
+  return (created as any).id
 }
 
 /**
@@ -123,7 +164,7 @@ export async function returnAndRestockOrder(
    * `calculated_price` dereference that would otherwise blow up — the real fix for the old
    * "shippingOption - id must be defined" error, which `location_id` alone never solved.
    */
-  const returnOptionId = await resolveReturnShippingOptionId(container)
+  const returnOptionId = await ensureReturnShippingOption(container)
 
   /**
    * RECEIVING IS A SEPARATE MOMENT FROM RETURNING.
