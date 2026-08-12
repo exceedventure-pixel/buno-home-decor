@@ -53,8 +53,8 @@ const brand: Brand = {
   },
 
   contact: {
-    address: "Banktown, Savar, Dhaka 1340, Bangladesh",
-    phone: "+8801712345678",
+    address: "38/01, Road 12, Banktown, Savar, Dhaka 1340, Bangladesh",
+    phone: "+8801349498525",
     email: "bunohomedecor@gmail.com",
     whatsapp: "+8801349498525", // e.g. "+15551234567" — admin DB value takes precedence at runtime
   },
