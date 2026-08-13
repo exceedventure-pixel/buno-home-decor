@@ -5,6 +5,7 @@ import ProductActions from "@modules/products/components/product-actions"
 import ProductTabs from "@modules/products/components/product-tabs"
 import ProductDescription from "@modules/products/components/product-description"
 import RelatedProducts from "@modules/products/components/related-products"
+import ProductReviews from "@modules/products/components/product-reviews"
 import ViewContentTracker from "@modules/products/components/view-content-tracker"
 import ProductInfo from "@modules/products/templates/product-info"
 import SkeletonRelatedProducts from "@modules/skeletons/templates/skeleton-related-products"
@@ -95,6 +96,11 @@ const ProductTemplate = async ({
 
           <ProductTabs product={product} />
         </div>
+      </div>
+      <div className="content-container my-16">
+        <Suspense fallback={null}>
+          <ProductReviews productId={product.id!} />
+        </Suspense>
       </div>
       <div
         className="content-container my-16 small:my-32"

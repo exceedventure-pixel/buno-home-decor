@@ -16,16 +16,26 @@ import {
 // attribute is only a client-side hint.
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 // 10 MB
 
+const imageFilter: multer.Options["fileFilter"] = (_req, file, cb) => {
+  if (!file.mimetype?.startsWith("image/")) {
+    cb(new Error(`Unsupported file type: ${file.mimetype}. Images only.`))
+    return
+  }
+  cb(null, true)
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
-  fileFilter: (_req, file, cb) => {
-    if (!file.mimetype?.startsWith("image/")) {
-      cb(new Error(`Unsupported file type: ${file.mimetype}. Images only.`))
-      return
-    }
-    cb(null, true)
-  },
+  fileFilter: imageFilter,
+})
+
+// Customer review photos: a few images per submission, same 10 MB / images-only guard. Public
+// route, so the count cap matters — it's the one upload endpoint not behind admin auth.
+const reviewUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: 5 },
+  fileFilter: imageFilter,
 })
 
 export default defineMiddlewares([
@@ -70,6 +80,12 @@ export default defineMiddlewares([
     method: ["POST"],
     matcher: "/admin/brands/upload",
     middlewares: [upload.single("file")],
+  },
+  // Public customer review photo upload — several images per request.
+  {
+    method: ["POST"],
+    matcher: "/store/product-reviews/upload",
+    middlewares: [reviewUpload.array("files", 5)],
   },
   // RBAC write-route validation.
   {

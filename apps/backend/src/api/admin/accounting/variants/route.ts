@@ -33,12 +33,40 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     }
   }
 
-  // Attach current cost so the form can prefill unit cost.
   const ids = rows.map((r) => r.variant_id)
-  const costs = ids.length ? await costSvc.listVariantCosts({ variant_id: ids }) : []
+
+  /**
+   * PREFILL FROM THE LAST RESTOCK, KEEPING UNIT COST AND FREIGHT SEPARATE.
+   *
+   * `variant_cost.cost` stores the LANDED cost (unit + freight lumped), so prefilling from it put
+   * freight into the unit-cost box. The FIFO batch keeps them split, so use the latest restock
+   * batch per variant instead: cost = unit_cost, freight = landed − unit. A variant with no
+   * restock batch (only a manual variant_cost) falls back to the landed figure with freight 0.
+   */
+  const [costs, batches] = await Promise.all([
+    ids.length ? costSvc.listVariantCosts({ variant_id: ids }) : [],
+    ids.length ? costSvc.listStockBatches({ variant_id: ids, source: "restock" }, { take: 100000 }) : [],
+  ])
   const costMap = new Map(costs.map((c: any) => [c.variant_id, Number(c.cost) || 0]))
 
+  // Latest restock batch per variant (max received_date).
+  const latestBatch = new Map<string, any>()
+  for (const b of batches) {
+    const prev = latestBatch.get(b.variant_id)
+    if (!prev || new Date(b.received_date).getTime() > new Date(prev.received_date).getTime()) {
+      latestBatch.set(b.variant_id, b)
+    }
+  }
+
   res.json({
-    variants: rows.map((r) => ({ ...r, cost: costMap.get(r.variant_id) ?? 0 })),
+    variants: rows.map((r) => {
+      const b = latestBatch.get(r.variant_id)
+      if (b) {
+        const unit = Number(b.unit_cost) || 0
+        const landed = Number(b.landed_unit_cost) || 0
+        return { ...r, cost: unit, freight: Math.max(0, landed - unit) }
+      }
+      return { ...r, cost: costMap.get(r.variant_id) ?? 0, freight: 0 }
+    }),
   })
 }

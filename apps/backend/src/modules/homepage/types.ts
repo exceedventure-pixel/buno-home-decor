@@ -5,6 +5,7 @@ export const SECTION_TYPES = [
   "featured_categories",
   "product_showcase",
   "brand_showcase",
+  "review_showcase",
 ] as const
 
 export type SectionType = (typeof SECTION_TYPES)[number]
@@ -21,6 +22,9 @@ export const PRODUCT_SHOWCASE_LAYOUTS = ["grid_4", "grid_2", "carousel", "list"]
 export const BRAND_SHOWCASE_LAYOUTS = ["grid", "horizontal_scroll"] as const
 export type BrandShowcaseLayout = (typeof BRAND_SHOWCASE_LAYOUTS)[number]
 
+export const REVIEW_SHOWCASE_LAYOUTS = ["grid", "carousel"] as const
+export type ReviewShowcaseLayout = (typeof REVIEW_SHOWCASE_LAYOUTS)[number]
+
 export type HeroCarouselLayout = (typeof HERO_CAROUSEL_LAYOUTS)[number]
 export type FeaturedCategoriesLayout =
   (typeof FEATURED_CATEGORIES_LAYOUTS)[number]
@@ -31,6 +35,7 @@ export type SectionLayout =
   | FeaturedCategoriesLayout
   | ProductShowcaseLayout
   | BrandShowcaseLayout
+  | ReviewShowcaseLayout
 
 /** Central lookup so future code can validate a layout against its type. */
 export const LAYOUT_KEYS: Record<SectionType, readonly string[]> = {
@@ -38,6 +43,7 @@ export const LAYOUT_KEYS: Record<SectionType, readonly string[]> = {
   featured_categories: FEATURED_CATEGORIES_LAYOUTS,
   product_showcase: PRODUCT_SHOWCASE_LAYOUTS,
   brand_showcase: BRAND_SHOWCASE_LAYOUTS,
+  review_showcase: REVIEW_SHOWCASE_LAYOUTS,
 }
 
 // ─── Settings JSON shapes per section type ────────────────────────────────────
@@ -84,11 +90,36 @@ export type BrandShowcaseSettings = {
   max_brands?: number
 }
 
+/**
+ * review_showcase — MANUAL testimonials curated by admin (not the per-product customer reviews).
+ * Items live inside settings JSON, so the media-cleanup URL scan already counts their photos as
+ * referenced, and there's no extra table to manage.
+ */
+export type HomeReviewItem = {
+  id: string
+  author: string
+  location?: string | null
+  /** 0–5 stars; 0/absent hides the stars for that item. */
+  rating?: number | null
+  text: string
+  /** Customer photo or a screenshot of the review (e.g. from Facebook). */
+  image_url?: string | null
+  /** Where it came from, e.g. "Facebook", "Verified buyer". */
+  source?: string | null
+}
+
+export type ReviewShowcaseSettings = {
+  reviews: HomeReviewItem[]
+  heading?: string | null
+  subheading?: string | null
+}
+
 export type SectionSettings =
   | HeroCarouselSettings
   | FeaturedCategoriesSettings
   | ProductShowcaseSettings
   | BrandShowcaseSettings
+  | ReviewShowcaseSettings
 
 // ─── Module identifier ────────────────────────────────────────────────────────
 

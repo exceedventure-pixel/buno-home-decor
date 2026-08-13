@@ -79,11 +79,29 @@ export interface BrandShowcaseSection extends SectionBase {
   brands: BrandShowcaseBrand[]
 }
 
+export interface HomepageReviewItem {
+  id: string
+  author: string
+  location: string | null
+  rating: number | null
+  text: string
+  image_url: string | null
+  source: string | null
+}
+
+export interface ReviewShowcaseSection extends SectionBase {
+  type: "review_showcase"
+  reviews: HomepageReviewItem[]
+  heading: string | null
+  subheading: string | null
+}
+
 export type HomepageSection =
   | HeroCarouselSection
   | FeaturedCategoriesSection
   | ProductShowcaseSection
   | BrandShowcaseSection
+  | ReviewShowcaseSection
 
 // Common props passed to every section component
 export interface SectionProps {

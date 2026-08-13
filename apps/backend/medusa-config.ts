@@ -91,6 +91,9 @@ module.exports = defineConfig({
     {
       resolve: "./src/modules/orderProcessing",
     },
+    {
+      resolve: "./src/modules/productReview",
+    },
     ...(hasS3
       ? [
           {

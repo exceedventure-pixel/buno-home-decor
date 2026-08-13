@@ -16,7 +16,7 @@ import { EditSectionDrawer } from "./components/edit-section"
 
 // â”€â”€â”€ Shared types (re-exported for child components) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export type SectionType = "hero_carousel" | "featured_categories" | "product_showcase" | "brand_showcase"
+export type SectionType = "hero_carousel" | "featured_categories" | "product_showcase" | "brand_showcase" | "review_showcase"
 
 export interface HomeSlide {
   id: string
@@ -77,11 +77,12 @@ export async function adminFetch<T = unknown>(
 
 // â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const TYPE_BADGE_COLOR: Record<SectionType, "blue" | "green" | "orange" | "purple"> = {
+const TYPE_BADGE_COLOR: Record<SectionType, "blue" | "green" | "orange" | "purple" | "red"> = {
   hero_carousel: "blue",
   featured_categories: "green",
   product_showcase: "orange",
   brand_showcase: "purple",
+  review_showcase: "red",
 }
 
 const TYPE_LABEL: Record<SectionType, string> = {
@@ -89,6 +90,7 @@ const TYPE_LABEL: Record<SectionType, string> = {
   featured_categories: "Featured Categories",
   product_showcase: "Product Showcase",
   brand_showcase: "Brands Showcase",
+  review_showcase: "Customer Reviews",
 }
 
 // â”€â”€â”€ Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

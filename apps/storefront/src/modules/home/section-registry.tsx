@@ -4,6 +4,7 @@ import { HeroCarousel } from "./components/hero-carousel"
 import { FeaturedCategories } from "./components/featured-categories"
 import { ProductShowcase } from "./components/product-showcase"
 import { BrandShowcase } from "./components/brand-showcase"
+import { ReviewShowcase } from "./components/review-showcase"
 
 type SectionComponent = React.ComponentType<SectionProps>
 
@@ -34,5 +35,9 @@ export const SECTION_REGISTRY: Record<
   brand_showcase: {
     grid:              (props) => <BrandShowcase {...props} variant="grid" />,
     horizontal_scroll: (props) => <BrandShowcase {...props} variant="horizontal_scroll" />,
+  },
+  review_showcase: {
+    grid:     (props) => <ReviewShowcase {...props} variant="grid" />,
+    carousel: (props) => <ReviewShowcase {...props} variant="carousel" />,
   },
 }

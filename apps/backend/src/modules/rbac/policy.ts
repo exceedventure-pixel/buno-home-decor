@@ -82,6 +82,7 @@ const SEGMENT_ALIASES: Record<string, string> = {
   tracking: "tracking",
   "auth-settings": "auth_settings",
   homepage: "homepage",
+  "product-reviews": "product_reviews",
   "sales-insights": "sales_insights",
   "client-errors": "error_log",
   // Split further in resolvePermission(): /accounting/marketing -> marketing_spend.

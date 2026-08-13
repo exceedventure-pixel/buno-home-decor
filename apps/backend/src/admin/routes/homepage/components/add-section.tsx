@@ -18,6 +18,7 @@ const SECTION_TYPES: SectionType[] = [
   "featured_categories",
   "product_showcase",
   "brand_showcase",
+  "review_showcase",
 ]
 
 const TYPE_INFO: Record<SectionType, { label: string; description: string }> = {
@@ -37,6 +38,10 @@ const TYPE_INFO: Record<SectionType, { label: string; description: string }> = {
     label: "Brands Showcase",
     description: "Display your store brands as a logo grid or horizontal scroll.",
   },
+  review_showcase: {
+    label: "Customer Reviews",
+    description: "Hand-picked testimonials with photos or screenshots to build trust.",
+  },
 }
 
 const LAYOUT_KEYS: Record<SectionType, string[]> = {
@@ -44,6 +49,7 @@ const LAYOUT_KEYS: Record<SectionType, string[]> = {
   featured_categories: ["grid", "circles", "horizontal_scroll"],
   product_showcase: ["grid_4", "grid_2", "carousel", "list"],
   brand_showcase: ["grid", "horizontal_scroll"],
+  review_showcase: ["grid", "carousel"],
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────

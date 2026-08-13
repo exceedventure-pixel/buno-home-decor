@@ -23,6 +23,7 @@ const LAYOUT_KEYS: Record<SectionType, string[]> = {
   featured_categories: ["grid", "circles", "horizontal_scroll"],
   product_showcase: ["grid_4", "grid_2", "carousel", "list"],
   brand_showcase: ["grid", "horizontal_scroll"],
+  review_showcase: ["grid", "carousel"],
 }
 
 // â"€â"€â"€ Section metadata (title + layout) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -1130,6 +1131,237 @@ function BrandShowcaseEditor({ section }: { section: HomeSection }) {
   )
 }
 
+// â"€â"€â"€ Review showcase (manual testimonials with photos) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+
+type ReviewItem = {
+  id: string
+  author: string
+  location?: string | null
+  rating?: number | null
+  text: string
+  image_url?: string | null
+  source?: string | null
+}
+
+let reviewSeq = 0
+const newReview = (): ReviewItem => ({
+  id: `r_${Date.now()}_${reviewSeq++}`,
+  author: "",
+  location: "",
+  rating: 5,
+  text: "",
+  image_url: "",
+  source: "",
+})
+
+function ReviewShowcaseEditor({ section }: { section: HomeSection }) {
+  const current = (section.settings as { reviews?: ReviewItem[]; heading?: string; subheading?: string } | null) ?? {}
+  const [heading, setHeading] = useState(current.heading ?? "")
+  const [subheading, setSubheading] = useState(current.subheading ?? "")
+  const [reviews, setReviews] = useState<ReviewItem[]>(
+    current.reviews?.length ? current.reviews : [newReview()]
+  )
+  const [uploadingId, setUploadingId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const update = (id: string, patch: Partial<ReviewItem>) =>
+    setReviews((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  const remove = (id: string) => setReviews((rs) => rs.filter((r) => r.id !== id))
+  const move = (id: string, dir: -1 | 1) =>
+    setReviews((rs) => {
+      const i = rs.findIndex((r) => r.id === id)
+      const j = i + dir
+      if (i < 0 || j < 0 || j >= rs.length) return rs
+      const next = [...rs]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return next
+    })
+
+  const uploadPhoto = async (id: string, file: File) => {
+    setUploadingId(id)
+    try {
+      const fd = new FormData()
+      fd.append("file", file)
+      const data = await adminFetch<{ url: string }>("/admin/homepage/upload", { method: "POST", body: fd })
+      update(id, { image_url: data.url })
+    } catch {
+      toast.error("Upload failed")
+    } finally {
+      setUploadingId(null)
+    }
+  }
+
+  const save = async () => {
+    const clean = reviews
+      .map((r) => ({
+        ...r,
+        author: r.author.trim(),
+        text: r.text.trim(),
+        location: (r.location ?? "").trim() || null,
+        source: (r.source ?? "").trim() || null,
+        image_url: (r.image_url ?? "").trim() || null,
+        rating: r.rating ? Math.max(0, Math.min(5, Math.round(Number(r.rating)))) : null,
+      }))
+      .filter((r) => r.author && r.text)
+
+    setSaving(true)
+    try {
+      await adminFetch(`/admin/homepage/sections/${section.id}`, {
+        method: "POST",
+        body: JSON.stringify({
+          settings: { reviews: clean, heading: heading.trim() || null, subheading: subheading.trim() || null },
+        }),
+      })
+      toast.success("Reviews saved")
+    } catch {
+      toast.error("Failed to save")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-y-4">
+      <div className="rounded-lg bg-ui-bg-subtle border border-ui-border-base px-4 py-3">
+        <Text size="small" className="text-ui-fg-subtle">
+          Hand-picked testimonials shown on the homepage. Add a screenshot or customer photo, the
+          reviewer&apos;s name, an optional star rating and where it came from. Reviews without a name
+          or text are dropped on save.
+        </Text>
+      </div>
+
+      <div className="flex flex-col gap-y-1.5">
+        <Label size="small">Section heading <Text as="span" size="xsmall" className="text-ui-fg-muted">(optional)</Text></Label>
+        <Input value={heading} onChange={(e) => setHeading(e.target.value)} placeholder="What our customers say" />
+      </div>
+      <div className="flex flex-col gap-y-1.5">
+        <Label size="small">Sub-heading <Text as="span" size="xsmall" className="text-ui-fg-muted">(optional)</Text></Label>
+        <Input value={subheading} onChange={(e) => setSubheading(e.target.value)} placeholder="Real reviews from real homes" />
+      </div>
+
+      <div className="flex flex-col gap-y-3">
+        {reviews.map((r, i) => (
+          <div key={r.id} className="flex flex-col gap-y-3 rounded-lg border border-ui-border-base p-3">
+            <div className="flex items-center justify-between">
+              <Text size="xsmall" weight="plus" className="text-ui-fg-muted">Review {i + 1}</Text>
+              <div className="flex items-center gap-x-1">
+                <IconButton size="small" variant="transparent" disabled={i === 0} onClick={() => move(r.id, -1)}>
+                  <ArrowUpMini />
+                </IconButton>
+                <IconButton size="small" variant="transparent" disabled={i === reviews.length - 1} onClick={() => move(r.id, 1)}>
+                  <ArrowDown />
+                </IconButton>
+                <IconButton size="small" variant="transparent" onClick={() => remove(r.id)}>
+                  <Trash className="text-ui-fg-error" />
+                </IconButton>
+              </div>
+            </div>
+
+            {/* Photo / screenshot */}
+            <div className="flex items-center gap-3">
+              {r.image_url ? (
+                <img src={r.image_url} alt="" className="h-16 w-16 rounded-lg border border-ui-border-base object-cover" />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-ui-border-strong bg-ui-bg-subtle">
+                  <Plus className="text-ui-fg-muted" />
+                </div>
+              )}
+              <div className="flex flex-col gap-y-1">
+                <ReviewPhotoButton
+                  id={r.id}
+                  uploading={uploadingId === r.id}
+                  onFile={(f) => uploadPhoto(r.id, f)}
+                />
+                {r.image_url && (
+                  <Button size="small" variant="transparent" onClick={() => update(r.id, { image_url: "" })}>
+                    Remove photo
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="flex flex-col gap-y-1">
+                <Label size="small">Name</Label>
+                <Input value={r.author} onChange={(e) => update(r.id, { author: e.target.value })} placeholder="Ayesha R." />
+              </div>
+              <div className="flex flex-col gap-y-1">
+                <Label size="small">Location <Text as="span" size="xsmall" className="text-ui-fg-muted">(optional)</Text></Label>
+                <Input value={r.location ?? ""} onChange={(e) => update(r.id, { location: e.target.value })} placeholder="Dhaka" />
+              </div>
+              <div className="flex flex-col gap-y-1">
+                <Label size="small">Rating</Label>
+                <Select value={String(r.rating ?? 0)} onValueChange={(v) => update(r.id, { rating: Number(v) })}>
+                  <Select.Trigger><Select.Value /></Select.Trigger>
+                  <Select.Content>
+                    {[5, 4, 3, 2, 1, 0].map((n) => (
+                      <Select.Item key={n} value={String(n)}>{n === 0 ? "No stars" : `${n} ★`}</Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-y-1">
+                <Label size="small">Source <Text as="span" size="xsmall" className="text-ui-fg-muted">(optional)</Text></Label>
+                <Input value={r.source ?? ""} onChange={(e) => update(r.id, { source: e.target.value })} placeholder="Facebook" />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-y-1">
+              <Label size="small">Review text</Label>
+              <textarea
+                value={r.text}
+                onChange={(e) => update(r.id, { text: e.target.value })}
+                rows={3}
+                placeholder="The shelf is beautiful and the delivery was fast…"
+                className="w-full rounded-lg border border-ui-border-base bg-ui-bg-field px-3 py-2 text-sm outline-none focus:border-ui-border-interactive"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <Button size="small" variant="secondary" onClick={() => setReviews((rs) => [...rs, newReview()])}>
+          + Add review
+        </Button>
+        <Button size="small" onClick={save} isLoading={saving}>Save</Button>
+      </div>
+    </div>
+  )
+}
+
+/** Hidden file input + trigger, isolated so each review row uploads independently. */
+function ReviewPhotoButton({
+  id,
+  uploading,
+  onFile,
+}: {
+  id: string
+  uploading: boolean
+  onFile: (f: File) => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  return (
+    <>
+      <Button size="small" variant="secondary" isLoading={uploading} onClick={() => ref.current?.click()}>
+        {uploading ? "Uploading…" : "Upload photo / screenshot"}
+      </Button>
+      <input
+        ref={ref}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) onFile(f)
+          e.target.value = ""
+        }}
+        data-review={id}
+      />
+    </>
+  )
+}
+
 interface EditProps {
   section: HomeSection
   open: boolean
@@ -1218,6 +1450,9 @@ export function EditSectionDrawer({
             )}
             {section.type === "brand_showcase" && (
               <BrandShowcaseEditor section={section} />
+            )}
+            {section.type === "review_showcase" && (
+              <ReviewShowcaseEditor section={section} />
             )}
           </div>
         </Drawer.Body>

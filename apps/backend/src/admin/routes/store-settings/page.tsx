@@ -6,7 +6,6 @@ import {
   ChartBar,
   Key,
   EnvelopeSolid,
-  Photo,
   ExclamationCircle,
   Trash,
   ChevronDownMini,
@@ -277,10 +276,6 @@ function IntegrationSettings() {
         <NotificationsSection />
       </CategorySection>
 
-      <CategorySection title="Storage Cleanup" description="Remove unused files from your storage bucket" icon={Photo}>
-        <StorageSection />
-      </CategorySection>
-
       <CategorySection title="Error Log" description="Errors customers hit on the storefront" icon={ExclamationCircle}>
         <ErrorLogSection />
       </CategorySection>
@@ -319,6 +314,7 @@ const StoreSettingsPage = () => {
       [
         can("store_settings", "read") && { value: "integrations", label: "Integrations" },
         can("store_settings", "read") && { value: "contact", label: "Contact & Invoice" },
+        can("store_settings", "read") && { value: "storage", label: "Storage" },
         can("homepage", "read") && { value: "homepage", label: "Homepage" },
         can("store_settings", "read") && { value: "product-cards", label: "Product Cards" },
         can("brands", "read") && { value: "brands", label: "Brands" },
@@ -368,6 +364,9 @@ const StoreSettingsPage = () => {
           </Tabs.Content>
           <Tabs.Content value="contact">
             <ContactSettings />
+          </Tabs.Content>
+          <Tabs.Content value="storage">
+            <StorageSection />
           </Tabs.Content>
           <Tabs.Content value="homepage">
             <HomepagePage />

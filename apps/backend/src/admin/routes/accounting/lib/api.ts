@@ -228,9 +228,17 @@ export const api = {
     rbacFetch(`/accounting/fixed-assets/${id}`, { method: "DELETE" }),
 
   variants: (q: string) =>
-    rbacFetch<{ variants: { variant_id: string; label: string; sku: string | null; cost: number }[] }>(
-      `/accounting/variants${q ? `?q=${encodeURIComponent(q)}` : ""}`
-    ),
+    rbacFetch<{
+      variants: {
+        variant_id: string
+        label: string
+        sku: string | null
+        /** Last restock's unit cost BEFORE freight. */
+        cost: number
+        /** Last restock's per-unit freight. */
+        freight: number
+      }[]
+    }>(`/accounting/variants${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   restock: (body: unknown) =>
     rbacFetch(`/accounting/restock`, { method: "POST", body: JSON.stringify(body) }),
 

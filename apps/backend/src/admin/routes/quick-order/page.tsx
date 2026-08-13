@@ -3,6 +3,7 @@ import { ShoppingBag, Trash, Plus } from "@medusajs/icons"
 import { Badge, Button, Container, Heading, Input, Label, Select, Text, toast } from "@medusajs/ui"
 import { useEffect, useState } from "react"
 import { MoneyInput } from "../../components/money-input"
+import { QtyStepper } from "../../components/qty-stepper"
 
 async function adminFetch<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   const token =
@@ -294,6 +295,9 @@ const QuickOrderPage = () => {
     setName(""); setPhone(""); setEmail(""); setAddress(""); setCity(""); setPostal("")
     setNote(""); setLines([]); setQuery(""); setResults([]); setCreated(null)
     setAdvance("0"); setProduction("0")
+    // Money that must NOT linger from the previous order: a leftover discount or delivery charge
+    // would silently apply to the next customer. Reset to zero every time.
+    setDiscount("0"); setDiscountMode("amount"); setDelivery("0"); setProdFreight("0")
   }
 
   if (created) {
@@ -412,7 +416,7 @@ const QuickOrderPage = () => {
               {/* Column labels — hidden on phones where each item stacks into its own card */}
               <div className="hidden sm:flex items-center gap-2 text-ui-fg-muted">
                 <Text size="xsmall" className="flex-1">Item</Text>
-                <Text size="xsmall" className="w-16 text-center">Qty</Text>
+                <Text size="xsmall" className="w-28 text-center">Qty</Text>
                 <Text size="xsmall" className="w-28 text-center">Selling price</Text>
                 <Text size="xsmall" className="w-24 text-right">Line total</Text>
                 <span className="w-4" />
@@ -445,15 +449,11 @@ const QuickOrderPage = () => {
 
                   {/* Row 2 on mobile: qty × price = total, each labelled */}
                   <div className="flex items-end gap-2 sm:contents">
-                    <label className="flex flex-1 flex-col gap-y-1 sm:w-16 sm:flex-none">
+                    <label className="flex flex-col gap-y-1 sm:w-28 sm:flex-none">
                       <Text size="xsmall" className="text-ui-fg-muted sm:hidden">Qty</Text>
-                      <Input
-                        type="number" min={1}
+                      <QtyStepper
                         value={String(l.quantity)}
-                        onChange={(e) => updateLine(l.key, { quantity: Math.max(1, Number(e.target.value) || 1) })}
-                        // The wheel must scroll the page, not re-price the order.
-                        onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                        className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        onChange={(v) => updateLine(l.key, { quantity: Math.max(1, Number(v) || 1) })}
                       />
                     </label>
                     <label className="flex flex-1 flex-col gap-y-1 sm:w-28 sm:flex-none">

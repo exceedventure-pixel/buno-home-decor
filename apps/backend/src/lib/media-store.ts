@@ -167,6 +167,20 @@ export async function getReferencedKeys(scope: any): Promise<Set<string>> {
     /* brand module not installed */
   }
 
+  // Customer review photos (optional module) — a photo attached to a review must never be
+  // garbage-collected, whether the review is pending, approved or rejected.
+  try {
+    const { data: reviews } = await query.graph({
+      entity: "product_review",
+      fields: ["images"],
+    })
+    for (const r of reviews) {
+      for (const url of (r.images as string[] | null) ?? []) add(url)
+    }
+  } catch {
+    /* productReview module not installed */
+  }
+
   return keys
 }
 

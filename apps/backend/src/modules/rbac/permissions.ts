@@ -127,6 +127,7 @@ export const RESOURCES: ResourceDef[] = [
   { key: "tracking", label: "Tracking & Pixels", group: "settings", actions: STD },
   { key: "auth_settings", label: "Storefront Auth", group: "settings", actions: STD },
   { key: "homepage", label: "Homepage Builder", group: "settings", actions: STD },
+  { key: "product_reviews", label: "Product Reviews", group: "catalog", actions: STD },
   // Insights
   { key: "sales_insights", label: "Sales Insights", group: "insights", actions: ["read", "manage"] },
   { key: "error_log", label: "Error Log", group: "insights", actions: ["read", "manage"] },

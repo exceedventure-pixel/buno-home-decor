@@ -16,6 +16,7 @@ import {
 } from "@medusajs/ui"
 
 import { MoneyInput } from "../../../components/money-input"
+import { QtyStepper } from "../../../components/qty-stepper"
 import { SupplierSelect } from "../../../components/supplier-select"
 import { StockHealthBanner } from "../../../widgets/stock-health-banner"
 import { BatchActions } from "./batch-actions"
@@ -25,7 +26,9 @@ import { useMemo, useState } from "react"
 import { money } from "../../../lib/kpi"
 import { api } from "../lib/api"
 
-type Picked = { variant_id: string; label: string; sku: string | null; cost: number }
+/** `cost` is the last restock's unit cost BEFORE freight; `freight` its per-unit freight. Split so
+ *  the prefill restores them to the same two boxes they were entered in — not lumped into one. */
+type Picked = { variant_id: string; label: string; sku: string | null; cost: number; freight: number }
 
 const cur = "bdt"
 
@@ -125,7 +128,7 @@ function VariantPicker({
                 )}
               </div>
               <Text size="xsmall" className="text-ui-fg-muted whitespace-nowrap">
-                {money(v.cost, cur)}
+                {money(v.cost + v.freight, cur)}
               </Text>
             </button>
           ))}
@@ -481,8 +484,10 @@ export function RestockSection() {
                       onPick={(v) =>
                         setLine(l.key, {
                           picked: v,
-                          // Prefill from the last landed cost — usually right, always editable.
+                          // Prefill from the last restock — unit cost and freight to their OWN
+                          // boxes (not lumped), so a repeat purchase starts from what it really was.
                           unitCost: v.cost > 0 ? String(v.cost) : "",
+                          freight: v.freight > 0 ? String(v.freight) : "0",
                         })
                       }
                       onClear={() => setLine(l.key, { picked: null })}
@@ -491,7 +496,7 @@ export function RestockSection() {
                     <div className="flex flex-wrap items-end gap-3">
                       <div className="flex flex-col gap-y-1">
                         <Label size="small">Quantity</Label>
-                        <MoneyInput
+                        <QtyStepper
                           value={l.quantity}
                           onChange={(v) => setLine(l.key, { quantity: v })}
                         />

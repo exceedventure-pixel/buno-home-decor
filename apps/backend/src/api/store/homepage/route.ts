@@ -7,6 +7,7 @@ import type {
   FeaturedCategoriesSettings,
   HeroCarouselSettings,
   ProductShowcaseSettings,
+  ReviewShowcaseSettings,
 } from "../../../modules/homepage/types"
 
 // ─── Category resolution ──────────────────────────────────────────────────────
@@ -290,6 +291,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
             logo_url: b.logo_url ?? null,
           }))
           return { ...base, brands: shaped }
+        }
+
+        case "review_showcase": {
+          const cfg = (section.settings ?? { reviews: [] }) as ReviewShowcaseSettings
+          const reviews = (cfg.reviews ?? []).map((r) => ({
+            id: r.id,
+            author: r.author,
+            location: r.location ?? null,
+            rating: typeof r.rating === "number" ? r.rating : null,
+            text: r.text,
+            image_url: r.image_url ?? null,
+            source: r.source ?? null,
+          }))
+          return { ...base, reviews, heading: cfg.heading ?? null, subheading: cfg.subheading ?? null }
         }
 
         default:
