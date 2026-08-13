@@ -181,6 +181,20 @@ export async function getReferencedKeys(scope: any): Promise<Set<string>> {
     /* productReview module not installed */
   }
 
+  // Blog images (optional module): the cover image plus any images embedded in the markdown body.
+  try {
+    const { data: posts } = await query.graph({
+      entity: "blog_post",
+      fields: ["cover_image", "content"],
+    })
+    for (const p of posts) {
+      add(p.cover_image)
+      for (const m of (String(p.content ?? "").match(URL_RE) ?? [])) add(m)
+    }
+  } catch {
+    /* blog module not installed */
+  }
+
   return keys
 }
 

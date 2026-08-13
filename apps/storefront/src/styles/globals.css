@@ -13,6 +13,60 @@
 }
 
 @layer utilities {
+  /* ── Scroll-reveal animation (Apple-style: gentle fade + rise) ─────────────
+     Elements start hidden (reveal-init) and the Reveal component swaps in
+     reveal-in once they enter the viewport. Motion is disabled for users who
+     ask for reduced motion. */
+  @keyframes buno-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(1.5rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .reveal-init {
+    opacity: 0;
+    will-change: opacity, transform;
+  }
+  .reveal-in {
+    animation: buno-fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal-init {
+      opacity: 1;
+    }
+    .reveal-in {
+      animation: none;
+    }
+  }
+  /* Without JavaScript the reveal never fires — never leave content stuck invisible. */
+  @media (scripting: none) {
+    .reveal-init {
+      opacity: 1;
+    }
+  }
+
+  /* ── Apple-style soft card ────────────────────────────────────────────────
+     A crisp white card with a hairline border and a soft, wide shadow — the
+     workhorse surface for the content pages. `.card-hover` adds a gentle lift. */
+  .card-soft {
+    border-radius: 1.5rem;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    background-color: #ffffff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 18px 42px -22px rgba(0, 0, 0, 0.18);
+  }
+  .card-hover {
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .card-hover:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05), 0 30px 60px -26px rgba(0, 0, 0, 0.24);
+  }
+
   /* Chrome, Safari and Opera */
   .no-scrollbar::-webkit-scrollbar {
     display: none;

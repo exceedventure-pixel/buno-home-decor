@@ -1,6 +1,8 @@
 import { Metadata } from "next"
 import brand from "brand.config"
 import { getBaseURL } from "@lib/util/env"
+import { GOLD, goldTint } from "@lib/brand-ui"
+import Reveal from "@modules/common/components/reveal"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import {
   ArrowRight,
@@ -33,8 +35,6 @@ const PAGE_DESCRIPTION =
   "Answers to common questions about Buno Home Decor — products, ordering, payment, delivery, " +
   "returns, exchanges, cancellations, refunds and pre-orders."
 
-const GOLD = "#F5B301"
-const goldTint = (a: number) => `rgba(245, 179, 1, ${a})`
 
 const phoneDisplay = brand.contact.phone.replace(/^\+?880/, "0")
 const phoneTel = brand.contact.phone.startsWith("+")
@@ -451,78 +451,58 @@ export default function FaqPage() {
   }
 
   return (
-    <div
-      style={{ backgroundColor: "var(--brand-bg)", color: "var(--brand-text)" }}
-      className="overflow-hidden"
-    >
+    <div className="bg-white text-gray-900">
       {/* ── Hero ─────────────────────────────────────────────────────────────── */}
-      <section className="relative">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{ background: `radial-gradient(60% 55% at 50% 0%, ${goldTint(0.16)} 0%, transparent 70%)` }}
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-px"
-          style={{ background: `linear-gradient(to right, transparent, ${GOLD} 20%, ${GOLD} 80%, transparent)` }}
-        />
-        <div className="content-container relative py-20 medium:py-24 text-center">
-          <span
-            className="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.3em]"
-            style={{ borderColor: goldTint(0.5), color: "var(--brand-primary)", backgroundColor: goldTint(0.1) }}
-          >
-            <Sparkles className="h-3.5 w-3.5" style={{ color: GOLD }} />
-            FAQ
-          </span>
-          <h1 className="mx-auto mt-7 max-w-3xl text-4xl font-semibold leading-[1.08] tracking-tight small:text-5xl medium:text-6xl">
-            Questions?{" "}
-            <span className="relative whitespace-nowrap">
-              <span
-                aria-hidden
-                className="absolute inset-x-0 bottom-1 z-0 h-3 rounded-full"
-                style={{ backgroundColor: goldTint(0.5) }}
-              />
-              <span className="relative z-10">Answered.</span>
+      <section className="relative overflow-hidden">
+        <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(70% 60% at 50% -10%, ${goldTint(0.22)} 0%, transparent 60%)` }} />
+        <div className="relative mx-auto max-w-4xl px-6 py-24 text-center medium:py-32">
+          <Reveal>
+            <span className="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.25em] text-gray-700" style={{ borderColor: goldTint(0.5), backgroundColor: goldTint(0.12) }}>
+              <Sparkles className="h-3.5 w-3.5" style={{ color: GOLD }} />
+              FAQ
             </span>
-          </h1>
-          <p className="mx-auto mt-7 max-w-2xl text-lg leading-relaxed" style={{ color: "var(--brand-secondary)" }}>
-            Common questions about our products, ordering, payment, delivery, returns, and more.
-            Can&apos;t find your answer? Our team is happy to help.
-          </p>
-
-          {/* category chips */}
-          <div className="mt-9 flex flex-wrap items-center justify-center gap-2">
-            {CATEGORIES.map((c) => (
-              <a
-                key={c.id}
-                href={`#${c.id}`}
-                className="rounded-full border border-ui-border-base bg-ui-bg-base px-4 py-1.5 text-xs font-medium text-ui-fg-subtle transition-colors hover:border-ui-border-interactive hover:text-ui-fg-base"
-              >
-                {c.title}
-              </a>
-            ))}
-          </div>
+          </Reveal>
+          <Reveal delay={80}>
+            <h1 className="mx-auto mt-8 max-w-3xl text-5xl font-semibold leading-[1.02] tracking-[-0.03em] small:text-6xl medium:text-7xl">
+              Questions?{" "}
+              <span className="relative whitespace-nowrap">
+                <span aria-hidden className="absolute inset-x-0 bottom-2 h-4 rounded-full" style={{ backgroundColor: goldTint(0.55) }} />
+                <span className="relative">Answered.</span>
+              </span>
+            </h1>
+          </Reveal>
+          <Reveal delay={160}>
+            <p className="mx-auto mt-8 max-w-2xl text-xl leading-relaxed text-gray-500">
+              Common questions about our products, ordering, payment, delivery, returns, and more.
+              Can&apos;t find your answer? Our team is happy to help.
+            </p>
+          </Reveal>
+          <Reveal delay={240}>
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-2">
+              {CATEGORIES.map((c) => (
+                <a key={c.id} href={`#${c.id}`} className="rounded-full border border-gray-200 bg-white px-4 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900">
+                  {c.title}
+                </a>
+              ))}
+            </div>
+          </Reveal>
         </div>
       </section>
 
       {/* ── Categories ───────────────────────────────────────────────────────── */}
-      <div className="content-container pb-16">
-        <div className="mx-auto max-w-3xl">
-          {CATEGORIES.map((c) => {
-            const Icon = c.icon
-            return (
-              <section key={c.id} id={c.id} className="scroll-mt-24 pt-12 first:pt-4">
-                <div className="mb-2 flex items-center gap-3">
-                  <span
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl"
-                    style={{ backgroundColor: goldTint(0.14), color: GOLD }}
-                  >
+      <div className="mx-auto max-w-3xl px-6 pb-16">
+        {CATEGORIES.map((c) => {
+          const Icon = c.icon
+          return (
+            <Reveal key={c.id}>
+              <section id={c.id} className="scroll-mt-24 pt-14 first:pt-4">
+                <div className="mb-4 flex items-center gap-3">
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl" style={{ backgroundColor: goldTint(0.14), color: GOLD }}>
                     <Icon className="h-5 w-5" strokeWidth={1.75} />
                   </span>
-                  <h2 className="text-xl font-semibold tracking-tight medium:text-2xl">{c.title}</h2>
+                  <h2 className="text-2xl font-semibold tracking-[-0.02em]">{c.title}</h2>
                 </div>
-                <div className="divide-y divide-ui-border-base border-t border-ui-border-base">
+                <div className="card-soft divide-y divide-gray-100 px-6">
                   {c.items.map((item) => (
                     <Accordion key={item.q} q={item.q}>
                       {item.a}
@@ -530,78 +510,58 @@ export default function FaqPage() {
                   ))}
                 </div>
               </section>
-            )
-          })}
-        </div>
+            </Reveal>
+          )
+        })}
       </div>
 
       {/* ── Still have questions ─────────────────────────────────────────────── */}
-      <section className="border-t border-ui-border-base bg-ui-bg-subtle">
-        <div className="content-container py-16 medium:py-20">
-          <div
-            className="mx-auto flex max-w-4xl flex-col gap-5 rounded-2xl border p-7 medium:flex-row medium:items-center medium:justify-between medium:p-10"
-            style={{ borderColor: goldTint(0.3), backgroundColor: goldTint(0.07) }}
-          >
-            <div>
-              <h2 className="text-xl font-semibold tracking-tight">Still have questions?</h2>
-              <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "var(--brand-secondary)" }}>
-                If you couldn&apos;t find the information you need, we&apos;re happy to help.
-              </p>
-              <p className="mt-3 flex items-start gap-2 text-sm" style={{ color: "var(--brand-secondary)" }}>
-                <MapPin className="mt-0.5 h-4 w-4 shrink-0" style={{ color: GOLD }} />
-                {brand.contact.address}
-              </p>
+      <section className="bg-gray-50/70">
+        <div className="mx-auto max-w-6xl px-6 py-16 medium:py-24">
+          <Reveal>
+            <div className="flex flex-col gap-6 rounded-3xl p-8 medium:flex-row medium:items-center medium:justify-between medium:p-12" style={{ backgroundColor: goldTint(0.1) }}>
+              <div>
+                <h2 className="text-2xl font-semibold tracking-[-0.02em]">Still have questions?</h2>
+                <p className="mt-2 text-[15px] leading-relaxed text-gray-600">If you couldn&apos;t find the information you need, we&apos;re happy to help.</p>
+                <p className="mt-3 flex items-start gap-2 text-sm text-gray-500">
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0" style={{ color: GOLD }} />
+                  {brand.contact.address}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-3">
+                <a href={`tel:${phoneTel}`} className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-6 py-3 text-sm font-semibold text-white transition-transform hover:scale-[1.03]">
+                  <Phone className="h-4 w-4" /> {phoneDisplay}
+                </a>
+                <a href={`mailto:${brand.contact.email}`} className="inline-flex items-center gap-2 rounded-full border border-gray-300 px-6 py-3 text-sm font-semibold text-gray-900 transition-colors hover:bg-white">
+                  <Mail className="h-4 w-4" /> Email
+                </a>
+                <LocalizedClientLink href="/support" className="inline-flex items-center gap-2 rounded-full border border-gray-300 px-6 py-3 text-sm font-semibold text-gray-900 transition-colors hover:bg-white">
+                  Support Center <ArrowRight className="h-4 w-4" style={{ color: GOLD }} />
+                </LocalizedClientLink>
+              </div>
             </div>
-            <div className="flex shrink-0 flex-wrap gap-3">
-              <a
-                href={`tel:${phoneTel}`}
-                className="inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-bold shadow-sm transition-transform hover:scale-[1.02]"
-                style={{ backgroundColor: GOLD, color: "var(--brand-primary)" }}
-              >
-                <Phone className="h-4 w-4" /> {phoneDisplay}
-              </a>
-              <a
-                href={`mailto:${brand.contact.email}`}
-                className="inline-flex items-center gap-2 rounded-full border border-ui-border-strong px-6 py-3 text-sm font-semibold text-ui-fg-base transition-colors hover:bg-ui-bg-base"
-              >
-                <Mail className="h-4 w-4" /> Email
-              </a>
-              <LocalizedClientLink
-                href="/support"
-                className="inline-flex items-center gap-2 rounded-full border border-ui-border-strong px-6 py-3 text-sm font-semibold text-ui-fg-base transition-colors hover:bg-ui-bg-base"
-              >
-                Support Center <ArrowRight className="h-4 w-4" style={{ color: GOLD }} />
-              </LocalizedClientLink>
-            </div>
-          </div>
+          </Reveal>
         </div>
       </section>
 
-      <script
-        type="application/ld+json"
-        // eslint-disable-next-line react/no-danger
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
     </div>
   )
 }
 
 const PROSE =
-  "space-y-3 text-[15px] leading-7 text-ui-fg-subtle " +
-  "[&_strong]:font-semibold [&_strong]:text-ui-fg-base " +
-  "[&_a]:font-medium [&_a]:text-[color:var(--brand-primary)] [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-[rgba(245,179,1,0.7)] " +
-  "[&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_li]:pl-1 [&_li]:marker:text-[#F5B301]"
+  "space-y-3 text-[15px] leading-7 text-gray-600 " +
+  "[&_strong]:font-semibold [&_strong]:text-gray-900 " +
+  "[&_a]:font-medium [&_a]:text-gray-900 [&_a]:underline [&_a]:underline-offset-2 [&_a]:decoration-[rgba(240,180,0,0.8)] " +
+  "[&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5 [&_li]:pl-1 [&_li]:marker:text-[#F0B400]"
 
 /** A single question/answer disclosure. Native <details>, so it works without JavaScript. */
 function Accordion({ q, children }: { q: string; children: React.ReactNode }) {
   return (
     <details className="group">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 text-left">
-        <span className="text-[15px] font-semibold text-ui-fg-base medium:text-base">{q}</span>
-        <span
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-transform group-open:rotate-45"
-          style={{ backgroundColor: goldTint(0.14), color: GOLD }}
-        >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-left">
+        <span className="text-[15px] font-semibold text-gray-900 medium:text-base">{q}</span>
+        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-transform group-open:rotate-45" style={{ backgroundColor: goldTint(0.16), color: GOLD }}>
           <Plus className="h-4 w-4" strokeWidth={2.5} />
         </span>
       </summary>

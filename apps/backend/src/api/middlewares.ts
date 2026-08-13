@@ -81,6 +81,11 @@ export default defineMiddlewares([
     matcher: "/admin/brands/upload",
     middlewares: [upload.single("file")],
   },
+  {
+    method: ["POST"],
+    matcher: "/admin/blog/upload",
+    middlewares: [upload.single("file")],
+  },
   // Public customer review photo upload — several images per request.
   {
     method: ["POST"],
