@@ -115,6 +115,34 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0
 }
 
+/**
+ * BASIC-MODE COST OF GOODS for one order: units that shipped and stayed sold, at the variant's
+ * cost price.
+ *
+ * Received returns are netted off for the same reason FIFO nets them (see fifo-costing.ts, which
+ * consumes `fulfilled − return_received`): once the goods are physically back on the shelf their
+ * cost is no longer a cost of THIS sale. Leaving them in charges the stock twice — once as COGS on
+ * a sale that died, and again as the inventory now being held — so a return read as a permanent
+ * loss no matter how cleanly it came back.
+ *
+ * Exported so the rule is unit-testable on its own; a mirrored copy in a test is what let this
+ * drift from FIFO in the first place. Lines with no variant_id (custom / pre-order) never touch
+ * inventory and are costed from the workflow's production_cost instead.
+ */
+export function basicModeCogs(
+  items: readonly any[] | undefined | null,
+  costByVariant: ReadonlyMap<string, number>
+): number {
+  return (items ?? []).reduce((sum: number, it: any) => {
+    if (!it?.variant_id) return sum
+    const stillSold = Math.max(
+      0,
+      num(it.detail?.fulfilled_quantity) - num(it.detail?.return_received_quantity)
+    )
+    return sum + stillSold * (costByVariant.get(it.variant_id) ?? 0)
+  }, 0)
+}
+
 export async function computeOrderEconomics(
   container: MedusaContainer,
   opts?: { order_id?: string; from?: Date; to?: Date }
@@ -399,14 +427,7 @@ export async function computeOrderEconomics(
     const cogs = isProduction
       ? productionCost + productionFreight
       : mode === "basic"
-        ? // Units that actually shipped, at the variant's cost price. Lines with no variant
-          // (custom items) never touch inventory and are covered by productionCost above.
-          (o.items ?? []).reduce(
-            (s: number, it: any) =>
-              s +
-              num(it.detail?.fulfilled_quantity) * (simpleCost.get(it.variant_id) ?? 0),
-            0
-          )
+        ? basicModeCogs(o.items, simpleCost)
         : (fifo.cogs_by_ref.get(o.id) ?? 0)
     const courierCost = num(wf?.courier_fee)
 

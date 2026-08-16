@@ -64,8 +64,20 @@ function variantPrice(prices: any[] | undefined, cur: string): number {
 
 /** Resolutions that carry a whose-fault choice (drives free reship + customer-paid offset). */
 const FAULT_RESOLUTIONS: ResolutionKey[] = ["return_only", "return_refund", "exchange"]
-/** Resolutions where the goods come back, so "already in hand?" applies. */
-const RECEIVE_RESOLUTIONS: ResolutionKey[] = ["return_only", "return_refund", "exchange"]
+/**
+ * Resolutions where the goods come back, so "already in hand?" applies.
+ *
+ * rto_refused belongs here too: a refused parcel is still travelling back from the customer's door,
+ * so it needs the same received / not-yet-received choice as any other return. The backend has
+ * always honoured receive_now for it (it shares return_only's path in resolve.ts) — only the
+ * checkbox was missing, which pinned every refusal to "still on the way".
+ */
+const RECEIVE_RESOLUTIONS: ResolutionKey[] = [
+  "return_only",
+  "return_refund",
+  "exchange",
+  "rto_refused",
+]
 
 function AfterSaleWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder>) {
   const orderId = (order as any).id
@@ -210,10 +222,12 @@ function AfterSaleWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder
       )
       if (r.created) {
         toast.success(`Received — ${r.items} item type(s) back in stock`)
-        refresh()
       } else {
         toast.info(r.message || "Nothing to receive")
       }
+      // Refetch either way. "Already received" means our cached counts are the stale ones — without
+      // this the widget keeps showing "on the way back" and offering a button that can't do anything.
+      refresh()
     } catch (err: any) {
       toast.error(err.message || "Failed to receive the goods")
     } finally {
