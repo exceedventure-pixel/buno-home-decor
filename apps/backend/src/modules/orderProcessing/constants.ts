@@ -353,28 +353,33 @@ export const RESOLUTION_META: Record<
     help: "The pickup was missed. Book the same parcel again for the next day. No money moves.",
   },
   return_only: {
-    label: "Return (COD, no money back)",
-    help: "Parcel comes back and restocks. Nothing was paid, so nothing is refunded; the outbound courier fee is the loss.",
+    label: "Returned — customer paid toward it",
+    help: "The parcel comes back and restocks. No advance was taken so there is nothing to refund; enter whatever the customer put toward the return and the loss becomes the courier fee minus that.",
   },
   return_refund: {
-    label: "Return & refund advance",
-    help: "Parcel comes back and restocks, and a paid advance is returned to the customer.",
+    label: "Returned — refund the advance",
+    help: "The parcel comes back and restocks, and an advance already taken on the order is returned to the customer. Only offered when the order actually holds an advance.",
   },
   exchange: {
     label: "Exchange (send a replacement)",
     help: "The wrong/faulty item comes back; the correct one ships as its own order. Free delivery if it was our mistake.",
   },
   rto_refused: {
-    label: "Refused / returned to origin",
-    help: "The customer refused the parcel at the door. It returns and restocks; the outbound courier fee is the loss.",
+    label: "Refused on delivery (COD)",
+    help: "The customer would not accept the COD parcel. It comes back and restocks, nothing was ever paid, and we bear the full courier fee the courier charged us.",
   },
   damaged_in_transit: {
     label: "Damaged in transit (write off)",
     help: "Destroyed on the way — NOT restocked. Written off at cost; record any courier compensation as Other income.",
   },
+  /**
+   * RETIRED as a choice — damage is now a tick on the receive step ("it came back damaged"), because
+   * you only know the condition once the parcel is physically in your hands. Kept in the type and
+   * the DB check constraint so historical orders resolved this way still read correctly.
+   */
   damaged_on_return: {
     label: "Came back damaged",
-    help: "Returned but arrived broken. It restocks, then is written off as damage — so the loss shows as shrinkage, not a phantom sale.",
+    help: "Returned and arrived broken: restocked, then written off as damage so the loss shows as shrinkage. Now recorded by ticking 'it came back damaged' when receiving the goods.",
   },
   wrong_slip_correction: {
     label: "Wrong packing slip (goods correct)",

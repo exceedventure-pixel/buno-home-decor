@@ -11,6 +11,13 @@ export type ReturnRestockResult = {
   created: boolean
   items: number
   reason?: string
+  /**
+   * Variant quantities THIS call actually put back on the shelf. Empty unless something was
+   * received. The damaged-goods write-off needs to know exactly what landed — reading it back
+   * afterwards would race the receipt, and computing it before would count units that a partial
+   * receive never took.
+   */
+  received?: { variant_id: string; quantity: number }[]
 }
 
 /**
@@ -210,6 +217,9 @@ export async function receiveReturnedGoods(
     entity: "order",
     fields: [
       "id",
+      // Line items carry the variant; return items only reference them by item_id.
+      "items.id",
+      "items.variant_id",
       "returns.id",
       "returns.canceled_at",
       "returns.items.id",
@@ -247,5 +257,23 @@ export async function receiveReturnedGoods(
     input: { return_id: open.id, items },
   })
 
-  return { created: true, items: items.length }
+  /**
+   * Resolve the units just received back to their variants, so a caller writing off damage knows
+   * precisely what landed. Custom / pre-order lines carry no variant and never touched inventory,
+   * so they are dropped — there is nothing on a shelf to write off.
+   */
+  const variantByItem = new Map<string, string>(
+    (order.items ?? [])
+      .filter((li: any) => li?.id && li?.variant_id)
+      .map((li: any) => [li.id as string, li.variant_id as string])
+  )
+  const byVariant = new Map<string, number>()
+  for (const it of items) {
+    const variantId = variantByItem.get(it.id)
+    if (!variantId) continue
+    byVariant.set(variantId, (byVariant.get(variantId) ?? 0) + it.quantity)
+  }
+  const received = [...byVariant].map(([variant_id, quantity]) => ({ variant_id, quantity }))
+
+  return { created: true, items: items.length, received }
 }

@@ -203,28 +203,29 @@ export const RESOLUTION_META: Record<ResolutionKey, { label: string; help: strin
     help: "Book the same parcel again for the next day. No money moves.",
   },
   return_only: {
-    label: "Returned (COD — no money back)",
-    help: "Parcel comes back and restocks. Nothing was paid, so nothing is refunded; the outbound courier fee is the loss.",
+    label: "Returned — customer paid toward it",
+    help: "The parcel comes back and restocks. No advance was taken so there is nothing to refund; enter whatever the customer put toward the return and the loss becomes the courier fee minus that.",
   },
   return_refund: {
-    label: "Return & refund advance",
-    help: "Parcel comes back and restocks, and a paid advance is returned to the customer.",
+    label: "Returned — refund the advance",
+    help: "The parcel comes back and restocks, and an advance already taken on the order is returned to the customer.",
   },
   exchange: {
     label: "Send a replacement (exchange)",
     help: "The wrong/faulty item comes back; the correct one ships as its own order. Free delivery if it was our mistake.",
   },
   rto_refused: {
-    label: "Refused at door (RTO)",
-    help: "The customer refused the parcel. It returns and restocks; the outbound courier fee is the loss.",
+    label: "Refused on delivery (COD)",
+    help: "The customer would not accept the COD parcel. It comes back and restocks, nothing was ever paid, and we bear the full courier fee.",
   },
   damaged_in_transit: {
     label: "Damaged in transit (write off)",
     help: "Destroyed on the way — NOT restocked. Written off at cost.",
   },
+  /** Retired as a choice — damage is now ticked when receiving. Kept so historical orders read. */
   damaged_on_return: {
     label: "Came back damaged",
-    help: "Returned but arrived broken. It restocks, then is written off as damage — the loss shows as shrinkage.",
+    help: "Returned and arrived broken: restocked, then written off as damage. Now recorded when receiving the goods.",
   },
   wrong_slip_correction: {
     label: "Wrong packing slip (goods correct)",

@@ -101,6 +101,8 @@ function AfterSaleWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder
   const [refundAmount, setRefundAmount] = useState("")
   const [replacementDelivery, setReplacementDelivery] = useState("")
   const [busy, setBusy] = useState(false)
+  /** Ticked on the receive step when the parcel turns up broken — restock, then write off. */
+  const [receivedDamaged, setReceivedDamaged] = useState(false)
 
   // Exchange item picker
   const [query, setQuery] = useState("")
@@ -184,7 +186,9 @@ function AfterSaleWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder
     const out: ResolutionKey[] = []
     if (booked && !fullyBack) out.push("rebook_courier")
     if (canReturn) {
-      out.push("return_only", "rto_refused", "exchange", "damaged_on_return")
+      // damaged_on_return is deliberately absent: condition is judged when the parcel physically
+      // lands, so damage is a tick on the receive step instead of a resolution chosen up front.
+      out.push("return_only", "rto_refused", "exchange")
       if (heldCash > 0) out.push("return_refund")
     }
     if (shipped) out.push("damaged_in_transit", "wrong_slip_correction")
@@ -197,7 +201,14 @@ function AfterSaleWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder
 
   const showFault = resolution !== "" && FAULT_RESOLUTIONS.includes(resolution as ResolutionKey)
   const showReceive = resolution !== "" && RECEIVE_RESOLUTIONS.includes(resolution as ResolutionKey)
-  const showCustomerPaid = showFault && fault === "customer"
+  /**
+   * What the customer put toward getting the goods back to us. Always offered on a plain return —
+   * on a full-COD order that contribution is the only thing that softens the courier fee, so hiding
+   * it behind the fault choice made the common case unreachable. Never offered on a refusal: the
+   * customer never took the parcel, so we bear the whole fee.
+   */
+  const showCustomerPaid =
+    resolution === "return_only" || (showFault && fault === "customer" && resolution !== "rto_refused")
   const showRefund = resolution === "return_refund"
   const showExchange = resolution === "exchange"
 
@@ -216,12 +227,22 @@ function AfterSaleWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder
   const doReceive = async () => {
     setBusy(true)
     try {
-      const r = await adminFetch<{ created: boolean; items?: number; message?: string }>(
-        `/orders/${orderId}/receive-return`,
-        { method: "POST" }
-      )
+      const r = await adminFetch<{
+        created: boolean
+        items?: number
+        message?: string
+        written_off?: number
+      }>(`/orders/${orderId}/receive-return`, {
+        method: "POST",
+        body: JSON.stringify({ damaged: receivedDamaged }),
+      })
       if (r.created) {
-        toast.success(`Received — ${r.items} item type(s) back in stock`)
+        toast.success(
+          r.written_off
+            ? `Received — ${r.items} item type(s) back, ${r.written_off} unit(s) written off as damaged`
+            : `Received — ${r.items} item type(s) back in stock`
+        )
+        setReceivedDamaged(false)
       } else {
         toast.info(r.message || "Nothing to receive")
       }
@@ -324,9 +345,24 @@ function AfterSaleWidget({ data: order }: DetailWidgetProps<HttpTypes.AdminOrder
           <Text size="xsmall" className="text-ui-fg-muted">
             The parcel has turned around. Revenue is already reversed; restock it when it physically arrives.
           </Text>
+          <label className="flex items-start gap-x-2">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={receivedDamaged}
+              onChange={(e) => setReceivedDamaged(e.target.checked)}
+            />
+            <span>
+              <Text size="small">It came back damaged</Text>
+              <Text size="xsmall" className="text-ui-fg-muted">
+                Still restocks — then writes the units off as damage, so the loss shows as shrinkage
+                instead of a phantom sale. Tick this only if it arrived broken.
+              </Text>
+            </span>
+          </label>
           <div>
             <Button size="small" disabled={busy} isLoading={busy} onClick={doReceive}>
-              Mark received (restock)
+              {receivedDamaged ? "Mark received (restock & write off)" : "Mark received (restock)"}
             </Button>
           </div>
         </div>
