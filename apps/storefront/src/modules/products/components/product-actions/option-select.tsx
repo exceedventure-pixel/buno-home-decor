@@ -120,4 +120,4 @@ const OptionSelect: React.FC<OptionSelectProps> = ({
   )
 }
 
-export default OptionSelect
+export default React.memo(OptionSelect)

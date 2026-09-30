@@ -199,17 +199,42 @@ const OrderProcessingPage = () => {
   /**
    * Moving an order from the queue runs the very same workflow the order page does — it ships
    * goods and moves cash. So it gets the same confirmation, spelling out what will happen.
+   *
+   * Optimistic update: the row's status changes instantly in the cache on confirmation —
+   * the table feels instant. If the server rejects, we roll back to the previous data.
    */
   const move = useMutation({
     mutationFn: (m: PendingMove) => opApi.update(m.orderId, { order_status: m.to }),
+    onMutate: async (m: PendingMove) => {
+      // Cancel any in-flight refetches so they don't overwrite the optimistic update.
+      await qc.cancelQueries({ queryKey: ["order-processing", "all"] })
+      const prev = qc.getQueryData<{ orders: typeof rows }>([" order-processing", "all"])
+      qc.setQueryData<{ orders: typeof rows; counts: any; type_counts: any; total: any; totals: any }>(
+        ["order-processing", "all"],
+        (old) => {
+          if (!old) return old
+          return {
+            ...old,
+            orders: old.orders.map((r) =>
+              r.order_id === m.orderId ? { ...r, order_status: m.to } : r
+            ),
+          }
+        }
+      )
+      setPending(null)
+      return { prev }
+    },
     onSuccess: () => {
       toast.success("Order updated — stock and cash follow automatically")
-      setPending(null)
       qc.invalidateQueries({ queryKey: ["order-processing"] })
       qc.invalidateQueries({ queryKey: ["orders"] })
       qc.invalidateQueries({ queryKey: ["accounting"] })
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error, _m, ctx: any) => {
+      toast.error(e.message)
+      if (ctx?.prev) qc.setQueryData(["order-processing", "all"], ctx.prev)
+      setPending(null)
+    },
   })
 
   /**

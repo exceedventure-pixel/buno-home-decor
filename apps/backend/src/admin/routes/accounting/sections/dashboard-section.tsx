@@ -15,6 +15,10 @@ export function DashboardSection() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["accounting", "dashboard", month],
     queryFn: () => api.dashboard(from, to),
+    // 2 min stale time: accounting data doesn't change on every tab switch.
+    // The dashboard is expensive to compute (FIFO replay), so avoid re-fetching
+    // just because the user briefly looked at another tab.
+    staleTime: 2 * 60 * 1000,
   })
 
   if (isLoading) {

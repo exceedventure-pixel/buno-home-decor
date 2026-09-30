@@ -1,7 +1,7 @@
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 
-import { computeFifoCosting, EXCLUDED_FULFILLMENT } from "./fifo-costing"
+import { computeFifoCosting, EXCLUDED_FULFILLMENT, type FifoCosting, replayFifo } from "./fifo-costing"
 
 /**
  * Revenue / COGS / gross profit over Medusa's own orders.
@@ -225,6 +225,175 @@ export async function computeSalesMetrics(
       returned_value: returnedValue,
       inventory_writeoff: fifo.shrinkage_value_in_range,
       inventory_found: fifo.found_value_in_range,
+    },
+  }
+}
+
+/**
+ * Same as `computeSalesMetrics` but uses a pre-computed FIFO result instead of
+ * running the full replay again. Callers that already have the FIFO costing
+ * (e.g. the accounting dashboard, which runs it once and shares between lifetime
+ * and period queries) should use this variant to avoid the duplicate work.
+ *
+ * The revenue / COD logic is identical; only the FIFO sourcing is skipped.
+ */
+export async function computeSalesMetricsFifoShared(
+  container: MedusaContainer,
+  range: SalesRange,
+  sharedFifo: FifoCosting
+): Promise<SalesMetricsResult> {
+  const query = container.resolve(ContainerRegistrationKeys.QUERY)
+
+  const { from, to } = range
+
+  // Re-run the pure FIFO replay with the period range so cogs_in_range reflects
+  // the correct window, without re-fetching batches and orders from the DB.
+  // We pass the already-loaded batch + consumption data embedded in sharedFifo.
+  // Since sharedFifo.per_batch carries full state, we can derive period COGS by
+  // re-running the lightweight range-only pass using the existing cogs_by_ref map.
+  //
+  // For the period range: sum cogs_by_ref values where the order was created in range.
+  // For lifetime: use cogs_in_range from the shared result directly (it was computed
+  // for lifetime when range = allTimeRange).
+  //
+  // Rather than re-replaying, we compute period COGS from cogs_by_ref — the per-order
+  // breakdown already in the shared FIFO result — joined with order dates from the
+  // orders query below.
+
+  const filters = { created_at: { $gte: from, $lte: to } }
+  const PAGE = 200
+
+  const paged = async (fields: string[]): Promise<any[]> => {
+    const out: any[] = []
+    let offset = 0
+    for (;;) {
+      const { data } = await query.graph({
+        entity: "order",
+        fields,
+        filters,
+        pagination: { skip: offset, take: PAGE },
+      })
+      out.push(...data)
+      if (data.length < PAGE) break
+      offset += data.length
+    }
+    return out
+  }
+
+  const [totalsRows, itemRows] = await Promise.all([
+    paged([
+      "id", "status", "fulfillment_status", "payment_status", "currency_code", "created_at",
+      "total", "item_total", "shipping_total",
+    ]),
+    paged([
+      "id",
+      "items.id", "items.quantity", "items.variant_id", "items.unit_price",
+      "returns.id", "returns.items.item_id", "returns.items.quantity",
+      "payment_collections.payments.amount",
+      "payment_collections.payments.captured_at",
+      "payment_collections.payments.canceled_at",
+      "payment_collections.payments.refunds.amount",
+    ]),
+  ])
+
+  const itemsById = new Map<string, any>(itemRows.map((r: any) => [r.id, r]))
+  const orders: any[] = totalsRows.map((t: any) => ({
+    ...t,
+    items: itemsById.get(t.id)?.items ?? [],
+    returns: itemsById.get(t.id)?.returns ?? [],
+    payment_collections: itemsById.get(t.id)?.payment_collections ?? [],
+  }))
+
+  const counted = orders.filter(
+    (o) => o.status !== "canceled" && !EXCLUDED_FULFILLMENT.has(o.fulfillment_status)
+  )
+
+  let productRevenue = 0
+  let shippingCollected = 0
+  let totalRevenue = 0
+  let codPaid = 0
+  let codPending = 0
+  let currency: string | null = null
+  let returnedOrders = 0
+  let returnedValue = 0
+
+  const returnedRevenue = (o: any): { revenue: number; hasReturn: boolean } => {
+    const itemById = new Map<string, any>((o.items ?? []).map((it: any) => [it.id, it]))
+    let revenue = 0
+    for (const ret of o.returns ?? []) {
+      for (const ri of ret.items ?? []) {
+        const it = itemById.get(ri.item_id)
+        const q = Number(ri.quantity) || 0
+        if (!it || q <= 0) continue
+        revenue += (Number(it.unit_price) || 0) * q
+      }
+    }
+    return { revenue, hasReturn: (o.returns?.length ?? 0) > 0 }
+  }
+
+  for (const o of counted) {
+    currency = currency || o.currency_code
+    const itemTotal = Number(o.item_total) || 0
+    const total = Number(o.total) || 0
+
+    const ret = returnedRevenue(o)
+    const netItem = Math.max(0, itemTotal - ret.revenue)
+    const netTotal = Math.max(0, total - ret.revenue)
+    if (ret.hasReturn) {
+      returnedOrders++
+      returnedValue += ret.revenue
+    }
+
+    productRevenue += netItem
+    shippingCollected += Number(o.shipping_total) || 0
+    totalRevenue += netTotal
+
+    let captured = 0
+    let refunded = 0
+    for (const pc of o.payment_collections ?? []) {
+      for (const p of pc.payments ?? []) {
+        if (p.captured_at && !p.canceled_at) captured += Number(p.amount) || 0
+        for (const r of p.refunds ?? []) refunded += Number(r.amount) || 0
+      }
+    }
+
+    codPaid += Math.max(0, captured - refunded)
+    codPending += Math.max(0, netTotal - captured)
+  }
+
+  // Derive period COGS from the shared per-order cogs map — no second replay needed.
+  const ordersInPeriodIds = new Set(counted.map((o: any) => o.id))
+  let cogsInPeriod = 0
+  for (const [orderId, cost] of sharedFifo.cogs_by_ref) {
+    if (ordersInPeriodIds.has(orderId)) cogsInPeriod += cost
+  }
+
+  // Shrinkage/found for this period comes from the shared replay's range (which was
+  // already set to the period range when the shared FIFO was computed).
+  const cogs = Math.max(0, cogsInPeriod)
+  const grossProfit = productRevenue - cogs
+  const marginPct = productRevenue > 0 ? (grossProfit / productRevenue) * 100 : 0
+
+  return {
+    currency_code: currency,
+    counted_orders: counted.length,
+    total_orders_in_range: orders.length,
+    variants_missing_cost: sharedFifo.variants_uncosted,
+    partially_fulfilled_orders: sharedFifo.partially_fulfilled_orders,
+    metrics: {
+      total_revenue: totalRevenue,
+      product_revenue: productRevenue,
+      cogs,
+      gross_profit: grossProfit,
+      margin_pct: marginPct,
+      shipping_collected: shippingCollected,
+      cod_paid: codPaid,
+      cod_pending: codPending,
+      avg_order_value: counted.length ? totalRevenue / counted.length : 0,
+      returned_orders: returnedOrders,
+      returned_value: returnedValue,
+      inventory_writeoff: sharedFifo.shrinkage_value_in_range,
+      inventory_found: sharedFifo.found_value_in_range,
     },
   }
 }

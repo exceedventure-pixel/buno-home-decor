@@ -15,7 +15,7 @@ import {
 } from "@lib/delivery-pricing"
 import { isEqual } from "lodash"
 import { useParams, usePathname, useSearchParams } from "next/navigation"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { startTransition, useEffect, useMemo, useRef, useState } from "react"
 import ProductPrice from "../product-price"
 import MobileActions from "./mobile-actions"
 import { useRouter } from "next/navigation"
@@ -152,7 +152,12 @@ export default function ProductActions({
     } else {
       params.delete("v_id")
     }
-    router.replace(pathname + "?" + params.toString(), { scroll: false })
+    // Wrap in startTransition so the URL update is non-urgent — React commits the
+    // variant UI change (new price, stock status) immediately, then processes the
+    // navigation in the background. This removes the perceptible lag on option click.
+    startTransition(() => {
+      router.replace(pathname + "?" + params.toString(), { scroll: false })
+    })
   }, [selectedVariant, isValidVariant])
 
   const inStock = useMemo(() => {

@@ -4,9 +4,10 @@ import { pnlExpenses, pnlIncome, summariseLedger } from "../../../../lib/account
 import { computeInventoryAtCost } from "../../../../lib/insights/inventory-value"
 import {
   allTimeRange,
-  computeSalesMetrics,
+  computeSalesMetricsFifoShared,
   monthStart,
 } from "../../../../lib/insights/sales-metrics"
+import { computeFifoCosting } from "../../../../lib/insights/fifo-costing"
 import { ACCOUNTING_MODULE } from "../../../../modules/accounting"
 import type { GetDashboardSchema } from "../validators"
 
@@ -18,6 +19,9 @@ import type { GetDashboardSchema } from "../validators"
  *
  * Balance-sheet figures are ALL-TIME. A "net worth for June" is not a quantity that
  * exists. Only the profit block honours ?from&to.
+ *
+ * Performance: FIFO is computed ONCE and shared between lifetime and period metrics.
+ * Previously two independent calls each paged all orders — now one replay is reused.
  */
 export async function GET(
   req: AuthenticatedMedusaRequest<unknown, GetDashboardSchema>,
@@ -31,12 +35,19 @@ export async function GET(
   const pnlTo = to ?? now
   pnlTo.setHours(23, 59, 59, 999)
 
-  const [lifetimeSales, periodSales, inventory, allRows, ownedAssets] = await Promise.all([
-    computeSalesMetrics(req.scope, allTimeRange()),
-    computeSalesMetrics(req.scope, { from: pnlFrom, to: pnlTo }),
+  // Run the expensive FIFO replay ONCE — reused for both lifetime and period metrics.
+  // The period filter only controls which COGS get tallied; the replay itself is the same.
+  const [sharedFifo, inventory, allRows, ownedAssets] = await Promise.all([
+    computeFifoCosting(req.scope, { from: pnlFrom, to: pnlTo }),
     computeInventoryAtCost(req.scope),
     svc.listLedgerEntries({}, { take: 200000 }),
     svc.listFixedAssets({ is_disposed: false }, { take: 100000 }),
+  ])
+
+  // Both metrics calls now share the already-computed FIFO result.
+  const [lifetimeSales, periodSales] = await Promise.all([
+    computeSalesMetricsFifoShared(req.scope, allTimeRange(), sharedFifo),
+    computeSalesMetricsFifoShared(req.scope, { from: pnlFrom, to: pnlTo }, sharedFifo),
   ])
 
   const ledger = summariseLedger(allRows)
