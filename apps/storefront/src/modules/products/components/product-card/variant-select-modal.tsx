@@ -37,15 +37,58 @@ export default function VariantSelectModal({
     )
   )
 
+  const inStock = resolvedVariant
+    ? !resolvedVariant.manage_inventory ||
+      resolvedVariant.allow_backorder ||
+      (resolvedVariant.inventory_quantity || 0) > 0
+    : false
+
   const allSelected = options.every((opt) => selectedOptions[opt.id ?? ""] !== undefined)
-  const canSubmit = allSelected && !!resolvedVariant
+  const canSubmit = allSelected && !!resolvedVariant && inStock
 
   const handleSelect = (optionId: string, value: string) => {
-    setSelectedOptions((prev) => ({ ...prev, [optionId]: value }))
+    setSelectedOptions((prev) => {
+      const next = { ...prev, [optionId]: value }
+
+      // Check if this new combination exists in product.variants
+      const exactMatch = product.variants?.find((v) =>
+        v.options?.every((o) => next[o.option_id ?? ""] === o.value)
+      )
+
+      if (exactMatch) {
+        return next
+      }
+
+      // If no variant matches this exact combination, switch to a variant
+      // that matches the clicked option value (preferring in-stock)
+      const fallbackVariant =
+        product.variants?.find((v) => {
+          const hasOption = v.options?.some(
+            (o) => o.option_id === optionId && o.value === value
+          )
+          if (!hasOption) return false
+          if (!v.manage_inventory) return true
+          if (v.allow_backorder) return true
+          return (v.inventory_quantity || 0) > 0
+        }) ??
+        product.variants?.find((v) =>
+          v.options?.some((o) => o.option_id === optionId && o.value === value)
+        )
+
+      if (fallbackVariant?.options) {
+        const fallbackOpts: Record<string, string> = {}
+        fallbackVariant.options.forEach((o) => {
+          if (o.option_id && o.value) fallbackOpts[o.option_id] = o.value
+        })
+        return fallbackOpts
+      }
+
+      return next
+    })
   }
 
   const handleSubmit = async () => {
-    if (!resolvedVariant?.id) return
+    if (!resolvedVariant?.id || !inStock) return
     setSubmitting(true)
     try {
       await addToCart({ variantId: resolvedVariant.id, quantity: 1, countryCode })
@@ -136,6 +179,10 @@ export default function VariantSelectModal({
             <span className="animate-pulse">
               {mode === "buy" ? "Processing…" : "Adding…"}
             </span>
+          ) : !allSelected ? (
+            "Select options"
+          ) : !resolvedVariant || !inStock ? (
+            "Out of stock"
           ) : mode === "buy" ? (
             "Buy Now"
           ) : (

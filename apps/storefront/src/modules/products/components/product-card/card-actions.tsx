@@ -32,7 +32,12 @@ export default function CardActions({
   if (!showAddToCart && !showBuyNow) return null
 
   const isSingleVariant = product.variants?.length === 1 && !!product.variants[0].id
-  const variantId = isSingleVariant ? product.variants![0].id! : null
+  const singleVariant = isSingleVariant ? product.variants![0] : null
+  const inStock = singleVariant
+    ? !singleVariant.manage_inventory ||
+      singleVariant.allow_backorder ||
+      (singleVariant.inventory_quantity || 0) > 0
+    : true
 
   const handleAddToCart = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -45,8 +50,9 @@ export default function CardActions({
       }
       return
     }
+    if (!inStock) return
     setAdding(true)
-    await addToCart({ variantId: variantId!, quantity: 1, countryCode })
+    await addToCart({ variantId: singleVariant!.id!, quantity: 1, countryCode })
     setAdding(false)
   }
 
@@ -61,8 +67,9 @@ export default function CardActions({
       }
       return
     }
+    if (!inStock) return
     setBuyingNow(true)
-    await addToCart({ variantId: variantId!, quantity: 1, countryCode })
+    await addToCart({ variantId: singleVariant!.id!, quantity: 1, countryCode })
     router.push(`/${countryCode}/checkout`)
   }
 
@@ -74,24 +81,30 @@ export default function CardActions({
   const btnBase =
     "flex-1 flex items-center justify-center gap-x-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 disabled:opacity-60"
 
+  const isButtonDisabled = adding || buyingNow || (isSingleVariant && !inStock)
+
   return (
     <>
       <div className={containerClass}>
         {showAddToCart && (
           <button
             onClick={handleAddToCart}
-            disabled={adding || buyingNow}
-            className={`${btnBase} bg-gray-900 text-white hover:bg-gray-700`}
+            disabled={isButtonDisabled}
+            className={`${btnBase} bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {adding ? (
               <span className="animate-pulse">Adding…</span>
             ) : isSingleVariant ? (
-              <>
-                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-                Add to Cart
-              </>
+              !inStock ? (
+                "Out of stock"
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  Add to Cart
+                </>
+              )
             ) : (
               "Select Options"
             )}
@@ -101,13 +114,17 @@ export default function CardActions({
         {showBuyNow && (
           <button
             onClick={handleBuyNow}
-            disabled={adding || buyingNow}
-            className={`${btnBase} bg-[#fcbc06] text-gray-900 hover:bg-[#e0a800]`}
+            disabled={isButtonDisabled}
+            className={`${btnBase} bg-[#fcbc06] text-gray-900 hover:bg-[#e0a800] disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {buyingNow ? (
               <span className="animate-pulse">Processing…</span>
             ) : isSingleVariant ? (
-              "Buy Now"
+              !inStock ? (
+                "Out of stock"
+              ) : (
+                "Buy Now"
+              )
             ) : (
               "Buy Now →"
             )}

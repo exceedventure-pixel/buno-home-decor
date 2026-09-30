@@ -45,7 +45,28 @@ export default function ProductActions({
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
-  const [options, setOptions] = useState<Record<string, string | undefined>>({})
+  const getInitialOptions = () => {
+    if (!product.variants?.length) return {}
+
+    const vIdFromUrl = searchParams.get("v_id")
+    if (vIdFromUrl) {
+      const urlVariant = product.variants.find((v) => v.id === vIdFromUrl)
+      if (urlVariant) {
+        return optionsAsKeymap(urlVariant.options) ?? {}
+      }
+    }
+
+    const preferred =
+      product.variants.find((v) => {
+        if (!v.manage_inventory) return true
+        if (v.allow_backorder) return true
+        return (v.inventory_quantity || 0) > 0
+      }) ?? product.variants[0]
+    return optionsAsKeymap(preferred.options) ?? {}
+  }
+
+  const [options, setOptions] = useState<Record<string, string | undefined>>(getInitialOptions)
+  const currentProductIdRef = useRef<string | null>(product.id)
   // Which option groups the shopper has consciously chosen — drives the "please choose" nudge.
   const [touchedOptions, setTouchedOptions] = useState<Set<string>>(new Set())
   const [isAdding, setIsAdding] = useState(false)
@@ -53,18 +74,20 @@ export default function ProductActions({
   const [quantity, setQuantity] = useState(1)
   const countryCode = useParams().countryCode as string
 
-  // Preselect a variant on load so the action buttons are usable immediately instead of greyed
-  // out. Prefer the first in-stock variant; fall back to the first variant if none report stock.
+  // Only re-initialize if the product itself changed (e.g. navigated to a different product)
+  // or if options was empty when variants first arrived.
   useEffect(() => {
-    if (!product.variants?.length) return
-    const preferred =
-      product.variants.find((v) => {
-        if (!v.manage_inventory) return true
-        if (v.allow_backorder) return true
-        return (v.inventory_quantity || 0) > 0
-      }) ?? product.variants[0]
-    setOptions(optionsAsKeymap(preferred.options) ?? {})
-  }, [product.variants])
+    const productChanged = currentProductIdRef.current !== product.id
+    const hadNoOptions = Object.keys(options).length === 0 && !!product.variants?.length
+
+    if (productChanged || hadNoOptions) {
+      currentProductIdRef.current = product.id
+      if (productChanged) {
+        setTouchedOptions(new Set())
+      }
+      setOptions(getInitialOptions())
+    }
+  }, [product.id, product.variants])
 
   const selectedVariant = useMemo(() => {
     if (!product.variants || product.variants.length === 0) return
@@ -76,7 +99,41 @@ export default function ProductActions({
 
   const setOptionValue = (optionId: string, value: string) => {
     setTouchedOptions((prev) => new Set(prev).add(optionId))
-    setOptions((prev) => ({ ...prev, [optionId]: value }))
+    setOptions((prev) => {
+      const next = { ...prev, [optionId]: value }
+
+      // Check if this new combination exists in product.variants
+      const exactMatch = product.variants?.some((v) => {
+        const variantOptions = optionsAsKeymap(v.options)
+        return isEqual(variantOptions, next)
+      })
+
+      if (exactMatch) {
+        return next
+      }
+
+      // If no variant matches this exact combination of options, find a variant
+      // that matches the newly selected option (preferring in-stock, then any variant),
+      // and adopt its options so the shopper is never stuck in an invalid combination.
+      const fallbackVariant =
+        product.variants?.find((v) => {
+          const varOpts = optionsAsKeymap(v.options)
+          if (varOpts?.[optionId] !== value) return false
+          if (!v.manage_inventory) return true
+          if (v.allow_backorder) return true
+          return (v.inventory_quantity || 0) > 0
+        }) ??
+        product.variants?.find((v) => {
+          const varOpts = optionsAsKeymap(v.options)
+          return varOpts?.[optionId] === value
+        })
+
+      if (fallbackVariant) {
+        return optionsAsKeymap(fallbackVariant.options) ?? next
+      }
+
+      return next
+    })
   }
 
   const isValidVariant = useMemo(() => {
@@ -95,7 +152,7 @@ export default function ProductActions({
     } else {
       params.delete("v_id")
     }
-    router.replace(pathname + "?" + params.toString())
+    router.replace(pathname + "?" + params.toString(), { scroll: false })
   }, [selectedVariant, isValidVariant])
 
   const inStock = useMemo(() => {

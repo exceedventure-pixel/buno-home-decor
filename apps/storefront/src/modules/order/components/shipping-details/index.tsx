@@ -56,12 +56,18 @@ const ShippingDetails = ({ order }: ShippingDetailsProps) => {
         >
           <Text className="txt-medium-plus text-ui-fg-base mb-1">Method</Text>
           <Text className="txt-medium text-ui-fg-subtle">
-            {(order.shipping_methods?.[0] as { name?: string })?.name} (
-            {convertToLocale({
-              amount: order.shipping_methods?.[0].total ?? 0,
-              currency_code: order.currency_code,
-            })}
-            )
+            {order.shipping_methods?.[0]?.name ?? "Standard Delivery"}
+            {order.shipping_methods?.[0]?.total !== undefined || order.shipping_total !== undefined ? (
+              <>
+                {" "}
+                (
+                {convertToLocale({
+                  amount: order.shipping_methods?.[0]?.total ?? order.shipping_total ?? 0,
+                  currency_code: order.currency_code,
+                })}
+                )
+              </>
+            ) : null}
           </Text>
         </div>
       </div>

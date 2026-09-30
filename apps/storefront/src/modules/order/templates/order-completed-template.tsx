@@ -30,7 +30,7 @@ export default async function OrderCompletedTemplate({
   const total = (order.total ?? 0) / 100
   const products = (order.items ?? []).map((item) => ({
     id: item.variant_id ?? item.id,
-    name: item.title,
+    name: item.title ?? (item as any).product_title ?? "Product",
     price: (item.unit_price ?? 0) / 100,
     currency,
   }))
@@ -62,7 +62,19 @@ export default async function OrderCompletedTemplate({
             Summary
           </Heading>
           <Items order={order} />
-          <CartTotals totals={order} />
+          <CartTotals
+            totals={{
+              ...order,
+              currency_code: currency,
+              item_subtotal: order.item_subtotal ?? order.subtotal ?? 0,
+              shipping_subtotal:
+                order.shipping_subtotal ??
+                order.shipping_total ??
+                order.shipping_methods?.[0]?.total ??
+                0,
+              discount_subtotal: order.discount_subtotal ?? order.discount_total ?? 0,
+            }}
+          />
           <ShippingDetails order={order} />
           <PaymentDetails order={order} />
           <Help />
