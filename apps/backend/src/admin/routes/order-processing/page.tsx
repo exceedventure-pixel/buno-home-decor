@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { PencilSquare, ShoppingBag } from "@medusajs/icons"
+import { ChevronDownMini, PencilSquare, ShoppingBag } from "@medusajs/icons"
 import {
   Badge,
   Button,
@@ -71,6 +71,26 @@ const BULK_STEPS: OrderStatusKey[] = [
   "delivered",
 ]
 
+type OptionalColumnKey = "type" | "status" | "courier" | "payment" | "delivery" | "net"
+
+const OPTIONAL_COLUMNS: { key: OptionalColumnKey; label: string }[] = [
+  { key: "type", label: "Type" },
+  { key: "status", label: "Status" },
+  { key: "courier", label: "Courier" },
+  { key: "payment", label: "Payment" },
+  { key: "delivery", label: "Delivery" },
+  { key: "net", label: "Net Profit" },
+]
+
+const DEFAULT_VISIBLE_COLUMNS: Record<OptionalColumnKey, boolean> = {
+  type: false,
+  status: false,
+  courier: false,
+  payment: false,
+  delivery: false,
+  net: false,
+}
+
 const BULK_LABEL: Partial<Record<OrderStatusKey, string>> = {
   confirmed: "Confirm all",
   in_production: "Start production for all",
@@ -84,6 +104,46 @@ const OrderProcessingPage = () => {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [sourceFilter, setSourceFilter] = useState<"all" | "website" | "manual">("all")
   const [status, setStatus] = useState<OrderStatusKey | "all">("all")
+  const [visibleColumns, setVisibleColumns] = useState<Record<OptionalColumnKey, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem("buno_order_proc_columns")
+      if (saved) return { ...DEFAULT_VISIBLE_COLUMNS, ...JSON.parse(saved) }
+    } catch {}
+    return DEFAULT_VISIBLE_COLUMNS
+  })
+
+  const toggleColumn = (key: OptionalColumnKey) => {
+    setVisibleColumns((prev) => {
+      const next = { ...prev, [key]: !prev[key] }
+      try {
+        localStorage.setItem("buno_order_proc_columns", JSON.stringify(next))
+      } catch {}
+      return next
+    })
+  }
+
+  const showAllColumns = () => {
+    const next: Record<OptionalColumnKey, boolean> = {
+      type: true,
+      status: true,
+      courier: true,
+      payment: true,
+      delivery: true,
+      net: true,
+    }
+    setVisibleColumns(next)
+    try {
+      localStorage.setItem("buno_order_proc_columns", JSON.stringify(next))
+    } catch {}
+  }
+
+  const hideAllColumns = () => {
+    setVisibleColumns(DEFAULT_VISIBLE_COLUMNS)
+    try {
+      localStorage.setItem("buno_order_proc_columns", JSON.stringify(DEFAULT_VISIBLE_COLUMNS))
+    } catch {}
+  }
+
   const [pending, setPending] = useState<PendingMove | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkTo, setBulkTo] = useState<OrderStatusKey | null>(null)
@@ -288,89 +348,188 @@ const OrderProcessingPage = () => {
   return (
     <div className="flex flex-col gap-y-4 p-4">
       <Container className="flex flex-col gap-y-5 px-4 py-4 sm:px-6 sm:py-6">
-        <div>
-          <Heading level="h1">Pre-orders</Heading>
-          <Text size="small" className="text-ui-fg-subtle mt-1">
-            Pre-orders and custom orders, worked through the production pipeline. Moving an order
-            here <b>does the real thing</b> — Dispatched ships and books the cost, Delivered
-            collects the cash. Statuses are derived from what actually happened, so they can't
-            drift from Medusa.
-          </Text>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <Heading level="h1">Order Processing</Heading>
+            <Text size="small" className="text-ui-fg-subtle mt-1">
+              Pre-orders, website orders, and courier dispatch pipeline. Statuses and finances derive directly from live operations.
+            </Text>
+          </div>
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenu.Trigger asChild>
+                <Button size="small" variant="secondary" className="flex items-center gap-x-1.5">
+                  <span>Columns</span>
+                  {Object.values(visibleColumns).filter(Boolean).length > 0 ? (
+                    <Badge size="2xsmall" color="blue">
+                      {Object.values(visibleColumns).filter(Boolean).length} visible
+                    </Badge>
+                  ) : (
+                    <span className="text-xs text-ui-fg-muted">(Default)</span>
+                  )}
+                  <ChevronDownMini className="w-3.5 h-3.5" />
+                </Button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content align="end" className="w-60 p-2 space-y-1 z-50 bg-ui-bg-base border border-ui-border-base shadow-lg rounded-lg">
+                <div className="flex items-center justify-between pb-1.5 mb-1 border-b border-ui-border-base px-2">
+                  <Text size="xsmall" weight="plus" className="text-ui-fg-muted uppercase tracking-wider">
+                    Toggle Columns
+                  </Text>
+                  <button
+                    type="button"
+                    onClick={Object.values(visibleColumns).some(Boolean) ? hideAllColumns : showAllColumns}
+                    className="text-xs text-ui-fg-interactive hover:underline"
+                  >
+                    {Object.values(visibleColumns).some(Boolean) ? "Reset to Default" : "Show All"}
+                  </button>
+                </div>
+                {OPTIONAL_COLUMNS.map((col) => (
+                  <label
+                    key={col.key}
+                    className="flex items-center gap-x-2.5 px-2 py-1.5 rounded hover:bg-ui-bg-subtle cursor-pointer select-none transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Checkbox
+                      checked={visibleColumns[col.key]}
+                      onCheckedChange={() => toggleColumn(col.key)}
+                    />
+                    <Text size="small" className="text-ui-fg-base">
+                      {col.label}
+                    </Text>
+                    {visibleColumns[col.key] && (
+                      <span className="ml-auto text-[10px] text-ui-fg-interactive font-medium">On</span>
+                    )}
+                  </label>
+                ))}
+              </DropdownMenu.Content>
+            </DropdownMenu>
+          </div>
         </div>
 
-        {/* Type filter */}
-        <div className="flex flex-wrap gap-1.5">
-          <Button
-            size="small"
-            variant={typeFilter === "production" ? "primary" : "secondary"}
-            onClick={() => setTypeFilter("production")}
-          >
-            Pre-order &amp; Custom ({typeCounts.pre_order + typeCounts.custom})
-          </Button>
-          <Button
-            size="small"
-            variant={typeFilter === "ready_stock" ? "primary" : "secondary"}
-            onClick={() => setTypeFilter("ready_stock")}
-          >
-            Ready Stock ({typeCounts.ready_stock})
-          </Button>
-          <Button
-            size="small"
-            variant={typeFilter === "all" ? "primary" : "secondary"}
-            onClick={() => setTypeFilter("all")}
-          >
-            All ({typeCounts.ready_stock + typeCounts.pre_order + typeCounts.custom})
-          </Button>
-        </div>
+        {/* Filters Panel with clear denotes for Source, Type, and Processing */}
+        <div className="rounded-xl border border-ui-border-base bg-ui-bg-subtle/50 p-4 sm:p-5 space-y-3.5 shadow-xs">
+          <div className="flex items-center justify-between pb-2 border-b border-ui-border-base">
+            <div className="flex items-center gap-x-2">
+              <Text size="small" weight="plus" className="text-ui-fg-base">
+                Filters &amp; Views
+              </Text>
+              {(sourceFilter !== "all" || typeFilter !== "all" || status !== "all") && (
+                <Badge size="2xsmall" color="blue">
+                  Active
+                </Badge>
+              )}
+            </div>
+            {(sourceFilter !== "all" || typeFilter !== "all" || status !== "all") && (
+              <Button
+                size="small"
+                variant="transparent"
+                className="text-ui-fg-interactive text-xs h-7 px-2"
+                onClick={() => {
+                  setSourceFilter("all")
+                  setTypeFilter("all")
+                  setStatus("all")
+                }}
+              >
+                Reset filters
+              </Button>
+            )}
+          </div>
 
-        {/* Source filter — how the order came in. Website = placed by a customer through the
-            storefront; Manual = created by staff on the Quick Order page (phone / social / in-store). */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Text size="xsmall" className="text-ui-fg-muted mr-1">
-            Source
-          </Text>
-          <Button
-            size="small"
-            variant={sourceFilter === "all" ? "primary" : "secondary"}
-            onClick={() => setSourceFilter("all")}
-          >
-            All ({sourceCounts.website + sourceCounts.manual})
-          </Button>
-          <Button
-            size="small"
-            variant={sourceFilter === "website" ? "primary" : "secondary"}
-            onClick={() => setSourceFilter("website")}
-          >
-            Website ({sourceCounts.website})
-          </Button>
-          <Button
-            size="small"
-            variant={sourceFilter === "manual" ? "primary" : "secondary"}
-            onClick={() => setSourceFilter("manual")}
-          >
-            Manual ({sourceCounts.manual})
-          </Button>
-        </div>
+          {/* 1. SOURCE FILTER */}
+          <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-2 items-center">
+            <div className="flex items-center gap-x-1.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-ui-fg-muted">
+                1. Source
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button
+                size="small"
+                variant={sourceFilter === "all" ? "primary" : "secondary"}
+                onClick={() => setSourceFilter("all")}
+              >
+                All Sources ({sourceCounts.website + sourceCounts.manual})
+              </Button>
+              <Button
+                size="small"
+                variant={sourceFilter === "website" ? "primary" : "secondary"}
+                onClick={() => setSourceFilter("website")}
+              >
+                🌐 Website ({sourceCounts.website})
+              </Button>
+              <Button
+                size="small"
+                variant={sourceFilter === "manual" ? "primary" : "secondary"}
+                onClick={() => setSourceFilter("manual")}
+              >
+                📝 Manual ({sourceCounts.manual})
+              </Button>
+            </div>
+          </div>
 
-        {/* Status tabs */}
-        <div className="flex flex-wrap gap-1.5">
-          <Button
-            size="small"
-            variant={status === "all" ? "primary" : "secondary"}
-            onClick={() => setStatus("all")}
-          >
-            All ({sourceRows.length})
-          </Button>
-          {ORDER_STATUS_ORDER.map((s) => (
-            <Button
-              key={s}
-              size="small"
-              variant={status === s ? "primary" : "secondary"}
-              onClick={() => setStatus(s)}
-            >
-              {ORDER_STATUS_META[s].label} {counts[s] ? `(${counts[s]})` : ""}
-            </Button>
-          ))}
+          {/* 2. TYPE FILTER */}
+          <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-2 items-center pt-2.5 border-t border-ui-border-subtle">
+            <div className="flex items-center gap-x-1.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-ui-fg-muted">
+                2. Type
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button
+                size="small"
+                variant={typeFilter === "all" ? "primary" : "secondary"}
+                onClick={() => setTypeFilter("all")}
+              >
+                All Types ({typeCounts.ready_stock + typeCounts.pre_order + typeCounts.custom})
+              </Button>
+              <Button
+                size="small"
+                variant={typeFilter === "production" ? "primary" : "secondary"}
+                onClick={() => setTypeFilter("production")}
+              >
+                🛠️ Pre-order &amp; Custom ({typeCounts.pre_order + typeCounts.custom})
+              </Button>
+              <Button
+                size="small"
+                variant={typeFilter === "ready_stock" ? "primary" : "secondary"}
+                onClick={() => setTypeFilter("ready_stock")}
+              >
+                📦 Ready Stock ({typeCounts.ready_stock})
+              </Button>
+            </div>
+          </div>
+
+          {/* 3. PROCESSING FILTER */}
+          <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-2 items-start pt-2.5 border-t border-ui-border-subtle">
+            <div className="flex items-center gap-x-1.5 pt-1.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-ui-fg-muted">
+                3. Processing
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button
+                size="small"
+                variant={status === "all" ? "primary" : "secondary"}
+                onClick={() => setStatus("all")}
+              >
+                All Stages ({sourceRows.length})
+              </Button>
+              {ORDER_STATUS_ORDER.map((s) => {
+                const c = counts[s] ?? 0
+                return (
+                  <Button
+                    key={s}
+                    size="small"
+                    variant={status === s ? "primary" : "secondary"}
+                    onClick={() => setStatus(s)}
+                    className={c > 0 && status !== s ? "font-medium text-ui-fg-base" : ""}
+                  >
+                    {ORDER_STATUS_META[s].label} {c > 0 ? `(${c})` : ""}
+                  </Button>
+                )
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Money for whatever is in view */}
@@ -442,18 +601,26 @@ const OrderProcessingPage = () => {
                     aria-label="Select all"
                   />
                 </Table.HeaderCell>
-                <Table.HeaderCell>Order</Table.HeaderCell>
-                <Table.HeaderCell className="hidden lg:table-cell">Type</Table.HeaderCell>
-                <Table.HeaderCell>Customer</Table.HeaderCell>
-                <Table.HeaderCell>Status</Table.HeaderCell>
-                <Table.HeaderCell>Courier</Table.HeaderCell>
-                <Table.HeaderCell className="hidden sm:table-cell">Payment</Table.HeaderCell>
+                <Table.HeaderCell className="whitespace-nowrap">Order</Table.HeaderCell>
+                {visibleColumns.type && (
+                  <Table.HeaderCell className="hidden lg:table-cell">Type</Table.HeaderCell>
+                )}
+                <Table.HeaderCell className="min-w-[220px]">Customer &amp; Products</Table.HeaderCell>
+                {visibleColumns.status && <Table.HeaderCell>Status</Table.HeaderCell>}
+                {visibleColumns.courier && <Table.HeaderCell>Courier</Table.HeaderCell>}
+                {visibleColumns.payment && (
+                  <Table.HeaderCell className="hidden sm:table-cell">Payment</Table.HeaderCell>
+                )}
                 <Table.HeaderCell className="hidden md:table-cell">Issue</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Total</Table.HeaderCell>
-                <Table.HeaderCell className="hidden md:table-cell text-right">Delivery</Table.HeaderCell>
+                {visibleColumns.delivery && (
+                  <Table.HeaderCell className="hidden md:table-cell text-right">Delivery</Table.HeaderCell>
+                )}
                 <Table.HeaderCell className="text-right">Courier fee</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Net</Table.HeaderCell>
-                <Table.HeaderCell className="hidden lg:table-cell">Notes</Table.HeaderCell>
+                {visibleColumns.net && (
+                  <Table.HeaderCell className="text-right">Net</Table.HeaderCell>
+                )}
+                <Table.HeaderCell className="min-w-[160px] max-w-[260px]">Notes</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Print</Table.HeaderCell>
               </Table.Row>
             </Table.Header>
@@ -481,101 +648,126 @@ const OrderProcessingPage = () => {
                     <Table.Cell className="whitespace-nowrap font-medium">
                       #{r.display_id}
                     </Table.Cell>
-                    <Table.Cell className="hidden lg:table-cell">
-                      <Badge size="2xsmall" color={ORDER_TYPE_META[r.order_type].color}>
-                        {ORDER_TYPE_META[r.order_type].label}
-                      </Badge>
-                    </Table.Cell>
-                    <Table.Cell className="max-w-[140px] sm:max-w-[180px]">
-                      <div className="flex min-w-0 items-center gap-x-1.5">
-                        <span className="truncate">{r.customer}</span>
-                        {/* Website is the norm and left unlabelled; flag the manual ones. */}
-                        {r.source === "manual" && (
-                          <Badge size="2xsmall" color="orange">
-                            Manual
-                          </Badge>
+                    {visibleColumns.type && (
+                      <Table.Cell className="hidden lg:table-cell">
+                        <Badge size="2xsmall" color={ORDER_TYPE_META[r.order_type].color}>
+                          {ORDER_TYPE_META[r.order_type].label}
+                        </Badge>
+                      </Table.Cell>
+                    )}
+                    <Table.Cell className="min-w-[220px] max-w-[340px]">
+                      <div className="flex flex-col gap-y-1">
+                        <div className="flex items-center gap-x-1.5">
+                          <span className="font-semibold text-ui-fg-base truncate">{r.customer}</span>
+                          {r.source === "manual" ? (
+                            <Badge size="2xsmall" color="orange">
+                              Manual
+                            </Badge>
+                          ) : (
+                            <Badge size="2xsmall" color="grey">
+                              Website
+                            </Badge>
+                          )}
+                        </div>
+                        {r.items_summary ? (
+                          <Tooltip content={r.items_summary} maxWidth={400}>
+                            <div className="flex items-center gap-x-1.5 text-xs text-ui-fg-subtle">
+                              <ShoppingBag className="w-3.5 h-3.5 shrink-0 text-ui-fg-muted" />
+                              <span className="truncate font-normal">{r.items_summary}</span>
+                            </div>
+                          </Tooltip>
+                        ) : (
+                          <Text size="xsmall" className="text-ui-fg-muted italic">
+                            —
+                          </Text>
                         )}
                       </div>
                     </Table.Cell>
                     {/* Status is a dropdown, not a badge plus a separate "Move" menu: the thing you
                         want to change and the thing showing its value are the same control. */}
-                    <Table.Cell onClick={(e) => e.stopPropagation()}>
-                      {r.allowed_next.length === 0 ? (
-                        <Badge size="2xsmall" color={os.color}>
-                          {os.label}
-                        </Badge>
-                      ) : (
-                        <Select
-                          value={r.order_status}
-                          onValueChange={(v) =>
-                            setPending({
-                              orderId: r.order_id,
-                              displayId: r.display_id,
-                              to: v as OrderStatusKey,
-                            })
-                          }
-                        >
-                          <Select.Trigger className="min-w-[150px]">
-                            <Select.Value />
-                          </Select.Trigger>
-                          <Select.Content>
-                            {/* Where it is now — shown so the trigger has a label, not offered. */}
-                            <Select.Item value={r.order_status} disabled>
-                              {os.label}
-                            </Select.Item>
-                            {r.allowed_next.map((s) => (
-                              <Select.Item key={s} value={s}>
-                                {ORDER_STATUS_META[s].label}
-                              </Select.Item>
-                            ))}
-                          </Select.Content>
-                        </Select>
-                      )}
-                    </Table.Cell>
-
-                    {/* Courier: book it, or show the parcel once booked. */}
-                    <Table.Cell onClick={(e) => e.stopPropagation()}>
-                      {r.consignment_id ? (
-                        <div className="flex flex-col">
-                          <Text size="xsmall" className="font-mono">
-                            {r.tracking || r.consignment_id}
-                          </Text>
-                          <Text size="xsmall" className="text-ui-fg-muted">
-                            {r.courier_status ?? "pending"}
-                          </Text>
-                        </div>
-                      ) : r.allowed_next.includes("courier_booked") ? (
-                        <Tooltip content={TRANSITION_EFFECT.courier_booked ?? "Books the parcel."}>
-                          <Button
-                            size="small"
-                            variant="secondary"
-                            onClick={() =>
+                    {visibleColumns.status && (
+                      <Table.Cell onClick={(e) => e.stopPropagation()}>
+                        {r.allowed_next.length === 0 ? (
+                          <Badge size="2xsmall" color={os.color}>
+                            {os.label}
+                          </Badge>
+                        ) : (
+                          <Select
+                            value={r.order_status}
+                            onValueChange={(v) =>
                               setPending({
                                 orderId: r.order_id,
                                 displayId: r.display_id,
-                                to: "courier_booked",
+                                to: v as OrderStatusKey,
                               })
                             }
                           >
-                            Book courier
-                          </Button>
-                        </Tooltip>
-                      ) : (
-                        <Text size="xsmall" className="text-ui-fg-muted">
-                          —
-                        </Text>
-                      )}
-                    </Table.Cell>
-                    <Table.Cell className="hidden sm:table-cell">
-                      <Badge size="2xsmall" color={ps.color}>
-                        {ps.label}
-                      </Badge>
-                      {r.outstanding > 0 && (
-                        <Text size="xsmall" className="text-ui-fg-muted">
-                          {money(r.outstanding, cur)} due
-                        </Text>
-                      )}
-                    </Table.Cell>
+                            <Select.Trigger className="min-w-[150px]">
+                              <Select.Value />
+                            </Select.Trigger>
+                            <Select.Content>
+                              {/* Where it is now — shown so the trigger has a label, not offered. */}
+                              <Select.Item value={r.order_status} disabled>
+                                {os.label}
+                              </Select.Item>
+                              {r.allowed_next.map((s) => (
+                                <Select.Item key={s} value={s}>
+                                  {ORDER_STATUS_META[s].label}
+                                </Select.Item>
+                              ))}
+                            </Select.Content>
+                          </Select>
+                        )}
+                      </Table.Cell>
+                    )}
+
+                    {/* Courier: book it, or show the parcel once booked. */}
+                    {visibleColumns.courier && (
+                      <Table.Cell onClick={(e) => e.stopPropagation()}>
+                        {r.consignment_id ? (
+                          <div className="flex flex-col">
+                            <Text size="xsmall" className="font-mono">
+                              {r.tracking || r.consignment_id}
+                            </Text>
+                            <Text size="xsmall" className="text-ui-fg-muted">
+                              {r.courier_status ?? "pending"}
+                            </Text>
+                          </div>
+                        ) : r.allowed_next.includes("courier_booked") ? (
+                          <Tooltip content={TRANSITION_EFFECT.courier_booked ?? "Books the parcel."}>
+                            <Button
+                              size="small"
+                              variant="secondary"
+                              onClick={() =>
+                                setPending({
+                                  orderId: r.order_id,
+                                  displayId: r.display_id,
+                                  to: "courier_booked",
+                                })
+                              }
+                            >
+                              Book courier
+                            </Button>
+                          </Tooltip>
+                        ) : (
+                          <Text size="xsmall" className="text-ui-fg-muted">
+                            —
+                          </Text>
+                        )}
+                      </Table.Cell>
+                    )}
+                    {visibleColumns.payment && (
+                      <Table.Cell className="hidden sm:table-cell">
+                        <Badge size="2xsmall" color={ps.color}>
+                          {ps.label}
+                        </Badge>
+                        {r.outstanding > 0 && (
+                          <Text size="xsmall" className="text-ui-fg-muted">
+                            {money(r.outstanding, cur)} due
+                          </Text>
+                        )}
+                      </Table.Cell>
+                    )}
                     <Table.Cell className="hidden md:table-cell">
                       {r.issue_status !== "none" && (
                         <Badge size="2xsmall" color={is.color}>
@@ -583,17 +775,19 @@ const OrderProcessingPage = () => {
                         </Badge>
                       )}
                     </Table.Cell>
-                    <Table.Cell className="text-right">{money(r.total, cur)}</Table.Cell>
-                    <Table.Cell
-                      className={`hidden md:table-cell text-right ${
-                        r.delivery_margin < 0 ? "text-ui-tag-red-text" : "text-ui-fg-subtle"
-                      }`}
-                    >
-                      {money(r.delivery_margin, cur)}
-                    </Table.Cell>
+                    <Table.Cell className="text-right whitespace-nowrap font-medium">{money(r.total, cur)}</Table.Cell>
+                    {visibleColumns.delivery && (
+                      <Table.Cell
+                        className={`hidden md:table-cell text-right whitespace-nowrap ${
+                          r.delivery_margin < 0 ? "text-ui-tag-red-text" : "text-ui-fg-subtle"
+                        }`}
+                      >
+                        {money(r.delivery_margin, cur)}
+                      </Table.Cell>
+                    )}
                     {/* Actual courier charge, set right here. Stop the click: the pencil edits the
                         fee, it doesn't open the order. */}
-                    <Table.Cell className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <Table.Cell className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-x-1">
                         <span className={r.courier_cost > 0 ? "" : "text-ui-fg-muted"}>
                           {money(r.courier_cost, cur)}
@@ -601,31 +795,37 @@ const OrderProcessingPage = () => {
                         <IconButton
                           size="small"
                           variant="transparent"
+                          title="Edit actual courier charge"
                           onClick={() => openFeeEdit(r.order_id, r.display_id, r.courier_cost)}
                         >
                           <PencilSquare />
                         </IconButton>
                       </div>
                     </Table.Cell>
+                    {visibleColumns.net && (
+                      <Table.Cell
+                        className={`text-right whitespace-nowrap font-medium ${
+                          r.net_profit < 0 ? "text-ui-tag-red-text" : "text-ui-tag-green-text"
+                        }`}
+                      >
+                        {money(r.net_profit, cur)}
+                      </Table.Cell>
+                    )}
+                    {/* Standing / Placement note — the note given when placing the order or standing instructions */}
                     <Table.Cell
-                      className={`text-right font-medium ${
-                        r.net_profit < 0 ? "text-ui-tag-red-text" : "text-ui-tag-green-text"
-                      }`}
-                    >
-                      {money(r.net_profit, cur)}
-                    </Table.Cell>
-                    {/* Standing note — the "deliver after 5pm" kind, not transition history. */}
-                    <Table.Cell
-                      className="hidden lg:table-cell max-w-[200px]"
+                      className="min-w-[160px] max-w-[260px]"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center gap-x-1">
-                        <Text size="xsmall" className="truncate text-ui-fg-subtle">
-                          {r.note || "—"}
-                        </Text>
+                        <Tooltip content={r.note || "No note recorded"} maxWidth={350}>
+                          <Text size="xsmall" className="truncate text-ui-fg-base font-normal">
+                            {r.note || "—"}
+                          </Text>
+                        </Tooltip>
                         <IconButton
                           size="small"
                           variant="transparent"
+                          title="Edit note"
                           onClick={() => {
                             setNoteDraft(r.note ?? "")
                             setNoteEdit({ orderId: r.order_id, displayId: r.display_id })

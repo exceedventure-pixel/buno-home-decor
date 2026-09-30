@@ -130,12 +130,20 @@ export const TRANSITION_EFFECT: Partial<Record<OrderStatusKey, string>> = {
     "Refunds everything still held — money goes back to the customer, stock is untouched. For a part-refund, use Refund on the order page instead.",
 }
 
+export type OrderItemSummary = {
+  title: string
+  variant?: string | null
+  quantity: number
+}
+
 export type OrderRow = {
   order_id: string
   display_id: number
   created_at: string
   customer: string
   currency_code: string
+  items?: OrderItemSummary[]
+  items_summary?: string
   order_type: OrderTypeKey
   /** Where it came from — website (storefront) vs manual (Quick Order page). */
   source: "website" | "manual"
@@ -169,6 +177,8 @@ export type OrderRow = {
   consignment_id: string | null
   /** Standing note on the order — editable from the queue. */
   note: string | null
+  /** Note entered during order placement (storefront customer note or manual note). */
+  placement_note?: string | null
   cod_amount: number
   actual_delivery_charge: number | null
   /** Exchange links — the order this one replaces, and the one that replaced it. */

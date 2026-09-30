@@ -160,7 +160,11 @@ function invoiceBody(order: any, econ: Econ, store: Store, compact: boolean): st
       </div>
       ${paymentBlock(order, econ)}
     </div>
-    ${order.metadata?.manual_note ? `<div class="note">Note: ${esc(order.metadata.manual_note)}</div>` : ""}
+    ${
+      (order.metadata?.manual_note || order.metadata?.customer_note || order.metadata?.note || econ?.note)
+        ? `<div class="note">Note: ${esc(order.metadata?.manual_note || order.metadata?.customer_note || order.metadata?.note || econ?.note)}</div>`
+        : ""
+    }
     <div class="foot">Thank you for shopping with ${esc(BRAND.name)}!</div>
   </section>`
 }
@@ -196,11 +200,17 @@ function packingBody(order: any, econ: Econ, store: Store, compact: boolean): st
    * either can carry the instruction that matters — and the packing slip is the one document that
    * physically travels with the parcel.
    */
-  const notes = [econ?.note, (order.metadata || {}).manual_note]
+  const notes = [
+    econ?.note,
+    (order.metadata || {}).manual_note,
+    (order.metadata || {}).customer_note,
+    (order.metadata || {}).note,
+  ]
     .map((n) => (n == null ? "" : String(n).trim()))
     .filter(Boolean)
-  const packNote = notes.length
-    ? `<div class="packnote"><span class="pn-lbl">Note</span>${esc(notes.join(" · "))}</div>`
+  const uniqueNotes = Array.from(new Set(notes))
+  const packNote = uniqueNotes.length
+    ? `<div class="packnote"><span class="pn-lbl">Note</span>${esc(uniqueNotes.join(" · "))}</div>`
     : ""
 
   return `<section class="doc packing ${compact ? "compact" : ""}">

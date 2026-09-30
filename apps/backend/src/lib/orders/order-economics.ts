@@ -31,12 +31,21 @@ import {
  * fee on the order. Nothing here is a stored total that could go stale.
  */
 
+export type OrderItemSummary = {
+  title: string
+  variant?: string | null
+  quantity: number
+}
+
 export type OrderEconomics = {
   order_id: string
   display_id: number
   created_at: string
   customer: string
   currency_code: string
+
+  items?: OrderItemSummary[]
+  items_summary?: string
 
   // How it was sold — drives costing and which pipeline stages apply.
   order_type: OrderType
@@ -90,6 +99,8 @@ export type OrderEconomics = {
   consignment_id: string | null
   /** The order's STANDING note (order_workflow.note) — not transition history. */
   note: string | null
+  /** Note entered during order placement (customer_note or manual_note). */
+  placement_note?: string | null
   /** COD amount handed to the courier to collect. */
   cod_amount: number
   /** The courier's own delivery charge, once captured from its API (else null). */
@@ -224,8 +235,9 @@ export async function computeOrderEconomics(
     ]),
     paged([
       "id",
+      "metadata",
       "shipping_address.first_name", "shipping_address.last_name",
-      "items.id", "items.variant_id", "items.unit_price",
+      "items.id", "items.title", "items.product_title", "items.variant_title", "items.variant_id", "items.unit_price", "items.quantity",
       "items.detail.quantity",
       "items.detail.fulfilled_quantity",
       "items.detail.delivered_quantity",
@@ -268,6 +280,7 @@ export async function computeOrderEconomics(
     const d = detailById.get(t.id) ?? {}
     return {
       ...t, // totals win — they came from the query that computes them correctly
+      metadata: d.metadata ?? null,
       shipping_address: d.shipping_address ?? null,
       items: d.items ?? [],
       payment_collections: d.payment_collections ?? [],
@@ -456,12 +469,44 @@ export async function computeOrderEconomics(
       o.email ||
       "—"
 
+    const itemsList: OrderItemSummary[] = (o.items ?? []).map((it: any) => {
+      const title = it.product_title || it.title || "Item"
+      const variant =
+        it.variant_title && it.variant_title !== "Default variant" ? it.variant_title : null
+      const quantity = num(it.quantity ?? it.detail?.quantity ?? 1)
+      return {
+        title,
+        variant,
+        quantity,
+      }
+    })
+
+    const itemsSummary = itemsList
+      .map((i: OrderItemSummary) => `${i.title}${i.variant ? ` (${i.variant})` : ""} × ${i.quantity}`)
+      .join(", ")
+
+    const placementNote =
+      (o.metadata?.customer_note as string | undefined)?.trim() ||
+      (o.metadata?.manual_note as string | undefined)?.trim() ||
+      (o.metadata?.note as string | undefined)?.trim() ||
+      (o.metadata?.notes as string | undefined)?.trim() ||
+      null
+
+    const wfNote = (wf?.note as string | undefined)?.trim() || null
+
+    const orderNote = placementNote
+      ? (wfNote && wfNote !== placementNote ? `${placementNote} • ${wfNote}` : placementNote)
+      : wfNote
+
     return {
       order_id: o.id,
       display_id: o.display_id,
       created_at: o.created_at,
       customer: name,
       currency_code: o.currency_code ?? "bdt",
+
+      items: itemsList,
+      items_summary: itemsSummary,
 
       order_type: orderType,
       // Older rows created before the source column existed read back as "website" (the DB default),
@@ -498,7 +543,8 @@ export async function computeOrderEconomics(
       courier_id: courierId,
       courier_status: courierStatus,
       consignment_id: consignmentId,
-      note: wf?.note ?? null,
+      note: orderNote,
+      placement_note: placementNote,
       cod_amount: num(wf?.cod_amount),
       actual_delivery_charge:
         wf?.actual_delivery_charge != null ? num(wf.actual_delivery_charge) : null,
