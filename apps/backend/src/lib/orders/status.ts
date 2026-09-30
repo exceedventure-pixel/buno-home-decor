@@ -86,6 +86,10 @@ export type OrderFacts = {
    * refund at all reads as "Refunded".
    */
   captured_amount?: number
+  /**
+   * Unallocated stock shortage — item sold on backorder or manual order without stock.
+   */
+  is_backorder?: boolean
 }
 
 /**
@@ -114,6 +118,9 @@ export function resolveOrderStatus(stage: StoredStage, facts: OrderFacts): Order
   if ((Number(facts.returned_qty) || 0) > 0) return "returned"
   if (facts.delivered) return "delivered"
   if ((Number(facts.fulfilled_qty) || 0) > 0) return "dispatched"
+
+  // Order placed with insufficient inventory — sits in the Backorders tab until allocated.
+  if (facts.is_backorder) return "backorder"
 
   // Nothing has physically happened yet, so the business stage is the truth.
   return stage

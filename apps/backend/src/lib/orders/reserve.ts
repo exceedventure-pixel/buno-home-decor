@@ -126,15 +126,59 @@ export async function checkAvailability(
 }
 
 /**
+ * Check physical inventory shortage for lines, REGARDLESS of allow_backorder setting.
+ * Used for detecting backorders for both website and manual orders.
+ */
+export async function checkShortages(
+  container: MedusaContainer,
+  lines: StockLine[]
+): Promise<AvailabilityProblem[]> {
+  if (!lines.length) return []
+
+  const location = await requireSellableLocation(container)
+  const inventory: any = container.resolve(Modules.INVENTORY)
+  const variants = await loadVariantInventoryMap(
+    container,
+    lines.map((l) => l.variant_id)
+  )
+
+  const problems: AvailabilityProblem[] = []
+
+  for (const line of lines) {
+    const v = variants.get(line.variant_id)
+    if (!v || !v.manage || !v.itemId) continue
+
+    const [level] = await inventory.listInventoryLevels({
+      inventory_item_id: v.itemId,
+      location_id: location.id,
+    })
+
+    const available = num(level?.stocked_quantity) - num(level?.reserved_quantity)
+    const needed = line.quantity * v.required
+
+    if (available < needed) {
+      problems.push({
+        variant_id: line.variant_id,
+        title: line.title ?? v.title,
+        requested: needed,
+        available: Math.max(0, available),
+      })
+    }
+  }
+
+  return problems
+}
+
+/**
  * Reserve every stock-managed line on an order, at the canonical warehouse.
  *
- * Idempotent: lines that already hold a reservation are skipped, so this is safe to call on an
- * order that was created before this bug was fixed — which is how those orders get repaired.
+ * Safe: only reserves items where available stock actually exists, preventing negative inventory.
+ * Any line with insufficient stock is returned in `shortages`.
  */
 export async function reserveOrderItems(
   container: MedusaContainer,
   orderId: string
-): Promise<{ reserved: number; skipped: number }> {
+): Promise<{ reserved: number; skipped: number; shortages: AvailabilityProblem[] }> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const inventory: any = container.resolve(Modules.INVENTORY)
   const location = await requireSellableLocation(container)
@@ -152,7 +196,7 @@ export async function reserveOrderItems(
   })
 
   const items = ((data?.[0] as any)?.items ?? []) as any[]
-  if (!items.length) return { reserved: 0, skipped: 0 }
+  if (!items.length) return { reserved: 0, skipped: 0, shortages: [] }
 
   const variants = await loadVariantInventoryMap(
     container,
@@ -166,6 +210,7 @@ export async function reserveOrderItems(
   const reservedLines = new Set((existing ?? []).map((r: any) => r.line_item_id))
 
   const toCreate: any[] = []
+  const shortages: AvailabilityProblem[] = []
   let skipped = 0
 
   for (const it of items) {
@@ -187,14 +232,31 @@ export async function reserveOrderItems(
       continue
     }
 
+    const needed = outstanding * v.required
+
+    // Verify stock exists in warehouse before creating reservation
+    const [level] = await inventory.listInventoryLevels({
+      inventory_item_id: v.itemId,
+      location_id: location.id,
+    })
+    const available = num(level?.stocked_quantity) - num(level?.reserved_quantity)
+
+    if (available < needed) {
+      shortages.push({
+        variant_id: it.variant_id,
+        title: it.title ?? v.title,
+        requested: needed,
+        available: Math.max(0, available),
+      })
+      skipped++
+      continue
+    }
+
     toCreate.push({
       line_item_id: it.id,
       inventory_item_id: v.itemId,
       location_id: location.id,
-      // Reservations are held in INVENTORY units, not variant units. Reserving 1 for a variant
-      // that consumes 50 holds nothing like enough, and the shortfall only shows up as negative
-      // stock once it ships.
-      quantity: outstanding * v.required,
+      quantity: needed,
     })
   }
 
@@ -204,5 +266,82 @@ export async function reserveOrderItems(
     })
   }
 
-  return { reserved: toCreate.length, skipped }
+  return { reserved: toCreate.length, skipped, shortages }
+}
+
+/**
+ * Check if an order has unreserved lines, and whether the warehouse currently has enough stock
+ * to allocate all remaining shortages.
+ */
+export async function checkOrderCanAllocate(
+  container: MedusaContainer,
+  orderId: string
+): Promise<{ can_allocate: boolean; shortages: AvailabilityProblem[]; has_unreserved: boolean }> {
+  const query = container.resolve(ContainerRegistrationKeys.QUERY)
+  const inventory: any = container.resolve(Modules.INVENTORY)
+  const location = await requireSellableLocation(container)
+
+  const { data } = await query.graph({
+    entity: "order",
+    fields: [
+      "id",
+      "items.id",
+      "items.title",
+      "items.variant_id",
+      "items.detail.quantity",
+      "items.detail.fulfilled_quantity",
+    ],
+    filters: { id: orderId },
+  })
+
+  const items = ((data?.[0] as any)?.items ?? []) as any[]
+  if (!items.length) return { can_allocate: false, shortages: [], has_unreserved: false }
+
+  const variants = await loadVariantInventoryMap(
+    container,
+    items.map((i) => i.variant_id).filter(Boolean)
+  )
+
+  const existing = await inventory.listReservationItems({
+    line_item_id: items.map((i) => i.id),
+  })
+  const reservedLines = new Set((existing ?? []).map((r: any) => r.line_item_id))
+
+  const unreservedLines: any[] = []
+  for (const it of items) {
+    const v = variants.get(it.variant_id)
+    if (!v || !v.manage || !v.itemId) continue
+    if (reservedLines.has(it.id)) continue
+    const outstanding = num(it.detail?.quantity) - num(it.detail?.fulfilled_quantity)
+    if (outstanding > 0) {
+      unreservedLines.push({ it, v, needed: outstanding * v.required })
+    }
+  }
+
+  if (!unreservedLines.length) {
+    return { can_allocate: false, shortages: [], has_unreserved: false }
+  }
+
+  const shortages: AvailabilityProblem[] = []
+  for (const line of unreservedLines) {
+    const [level] = await inventory.listInventoryLevels({
+      inventory_item_id: line.v.itemId,
+      location_id: location.id,
+    })
+    const available = num(level?.stocked_quantity) - num(level?.reserved_quantity)
+    if (available < line.needed) {
+      shortages.push({
+        variant_id: line.it.variant_id,
+        title: line.it.title ?? line.v.title,
+        requested: line.needed,
+        available: Math.max(0, available),
+      })
+    }
+  }
+
+  return {
+    can_allocate: shortages.length === 0,
+    shortages,
+    has_unreserved: true,
+  }
 }

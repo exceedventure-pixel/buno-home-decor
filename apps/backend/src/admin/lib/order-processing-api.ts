@@ -6,7 +6,7 @@ import { rbacFetch } from "./permissions"
  */
 
 export type OrderStatusKey =
-  | "new_order" | "confirmed" | "in_production" | "ready_to_dispatch" | "courier_booked"
+  | "backorder" | "new_order" | "confirmed" | "in_production" | "ready_to_dispatch" | "courier_booked"
   | "dispatched" | "delivered" | "cancelled" | "on_hold" | "returned" | "refunded"
 
 export type PaymentStatusKey =
@@ -29,6 +29,7 @@ export const ORDER_TYPE_META: Record<
 }
 
 export const ORDER_STATUS_META: Record<OrderStatusKey, { label: string; color: Color }> = {
+  backorder:         { label: "⏳ Backorders",     color: "orange" },
   new_order:         { label: "New Order",         color: "grey" },
   confirmed:         { label: "Confirmed",         color: "blue" },
   in_production:     { label: "In Production",     color: "purple" },
@@ -43,13 +44,13 @@ export const ORDER_STATUS_META: Record<OrderStatusKey, { label: string; color: C
 }
 
 export const ORDER_STATUS_ORDER: OrderStatusKey[] = [
-  "new_order", "confirmed", "in_production", "ready_to_dispatch", "courier_booked",
+  "backorder", "new_order", "confirmed", "in_production", "ready_to_dispatch", "courier_booked",
   "dispatched", "delivered", "on_hold", "cancelled", "returned", "refunded",
 ]
 
 /** Mirrors ORDER_PIPELINE in modules/orderProcessing/constants.ts — the happy path, in order. */
 export const ORDER_PIPELINE: OrderStatusKey[] = [
-  "new_order", "confirmed", "in_production", "ready_to_dispatch", "courier_booked",
+  "backorder", "new_order", "confirmed", "in_production", "ready_to_dispatch", "courier_booked",
   "dispatched", "delivered",
 ]
 
@@ -186,6 +187,10 @@ export type OrderRow = {
   replaces_display_id: number | null
   replaced_by_order_id: string | null
   replaced_by_display_id: number | null
+  /** Backorder and allocation info */
+  is_backorder?: boolean
+  can_allocate?: boolean
+  shortages?: Array<{ title: string; requested: number; available: number }>
   /** What this row may legally move to next — type-aware, computed server-side. */
   allowed_next: OrderStatusKey[]
 }
@@ -271,4 +276,16 @@ export const opApi = {
 
   update: (orderId: string, body: unknown) =>
     rbacFetch(`/order-processing/${orderId}`, { method: "POST", body: JSON.stringify(body) }),
+
+  allocate: (orderId: string) =>
+    rbacFetch<{ success: boolean; message: string; order: OrderRow }>(
+      `/order-processing/${orderId}/allocate`,
+      { method: "POST" }
+    ),
+
+  allocateBulk: (orderIds: string[]) =>
+    rbacFetch<{ allocated_count: number; allocated: string[]; failed_count: number; failed: any[]; message: string }>(
+      `/order-processing/allocate-bulk`,
+      { method: "POST", body: JSON.stringify({ order_ids: orderIds }) }
+    ),
 }

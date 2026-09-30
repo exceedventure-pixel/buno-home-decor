@@ -1,6 +1,8 @@
 import type { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 
 import { ORDER_PROCESSING_MODULE } from "../modules/orderProcessing"
+import { checkShortages } from "../lib/orders/reserve"
 
 /**
  * The other half of "in sync".
@@ -32,9 +34,54 @@ export default async function orderProcessingSync({
       await svc.createOrderWorkflows([{ order_id: orderId, stage: "new_order" }])
     }
 
-    // A native action is still an event worth recording — "who dispatched this?" must have an
-    // answer even when the answer is "someone used Medusa's own button".
-    if (event.name !== "order.placed") {
+    if (event.name === "order.placed") {
+      // Check if this website order was placed with items that have inventory shortages (backorders)
+      try {
+        const query = container.resolve(ContainerRegistrationKeys.QUERY)
+        const { data: ords } = await query.graph({
+          entity: "order",
+          fields: ["id", "metadata", "items.variant_id", "items.quantity", "items.title"],
+          filters: { id: orderId },
+        })
+        const ord = (ords?.[0] as any)
+        if (ord && !ord.metadata?.is_backorder) {
+          const lines = (ord.items ?? [])
+            .filter((i: any) => i.variant_id)
+            .map((i: any) => ({ variant_id: i.variant_id, quantity: Number(i.quantity) || 1, title: i.title }))
+          if (lines.length) {
+            const shortages = await checkShortages(container, lines)
+            if (shortages.length > 0) {
+              const orderSvc: any = container.resolve(Modules.ORDER)
+              await orderSvc.updateOrders([
+                {
+                  id: orderId,
+                  metadata: {
+                    ...(ord.metadata ?? {}),
+                    is_backorder: true,
+                    backorder_shortages: shortages,
+                  },
+                },
+              ])
+              await svc.createOrderStatusEvents([
+                {
+                  order_id: orderId,
+                  field: "order",
+                  from_value: null,
+                  to_value: "backorder",
+                  actor_id: null,
+                  source: "website",
+                  note: `Placed on backorder from website (${shortages.map((s) => `${s.title}: ${s.requested} needed, ${s.available} in stock`).join(", ")}) — awaiting restock.`,
+                },
+              ])
+            }
+          }
+        }
+      } catch (err: any) {
+        logger?.warn(`[order-processing-sync] checkShortages on order.placed: ${err.message}`)
+      }
+    } else {
+      // A native action is still an event worth recording — "who dispatched this?" must have an
+      // answer even when the answer is "someone used Medusa's own button".
       await svc.createOrderStatusEvents([
         {
           order_id: orderId,

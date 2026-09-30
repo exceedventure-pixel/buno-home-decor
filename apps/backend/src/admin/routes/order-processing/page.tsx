@@ -279,6 +279,30 @@ const OrderProcessingPage = () => {
     onError: (e: Error) => toast.error(e.message),
   })
 
+  const allocateMutation = useMutation({
+    mutationFn: async (orderId: string) => opApi.allocate(orderId),
+    onSuccess: (data) => {
+      toast.success(data.message || "Stock allocated! Order moved to New Orders.")
+      qc.invalidateQueries({ queryKey: ["order-processing"] })
+      qc.invalidateQueries({ queryKey: ["orders"] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const allocateBulkMutation = useMutation({
+    mutationFn: async (orderIds: string[]) => opApi.allocateBulk(orderIds),
+    onSuccess: (data) => {
+      toast.success(`${data.allocated_count} order(s) allocated! Moved to New Orders.`)
+      if (data.failed_count) {
+        toast.error(`${data.failed_count} could not be allocated: ${data.failed[0]?.reason}`)
+      }
+      setSelected(new Set())
+      qc.invalidateQueries({ queryKey: ["order-processing"] })
+      qc.invalidateQueries({ queryKey: ["orders"] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   /**
    * Fetch every order ONCE (type=all), filter in the browser. Filtering is a view of data we
    * already have, not a new question, so switching a tab should cost nothing — the request used
@@ -296,6 +320,11 @@ const OrderProcessingPage = () => {
   const everything = useMemo(() => data?.orders ?? [], [data])
   const typeCounts = data?.type_counts ?? { ready_stock: 0, pre_order: 0, custom: 0 }
   const cur = "bdt"
+
+  const restockedBackorders = useMemo(
+    () => everything.filter((r) => r.order_status === "backorder" && r.can_allocate),
+    [everything]
+  )
 
   // First narrow by type (the "Pre-orders" default = pre_order + custom), then by status.
   const typeRows = useMemo(() => {
@@ -641,6 +670,31 @@ const OrderProcessingPage = () => {
         {/* Leftovers from orders that no longer exist — they skew this queue's totals too. */}
         <OrphanWarning />
 
+        {/* Restocked backorders alert banner */}
+        {restockedBackorders.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/20 px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-x-2.5">
+              <span className="relative flex h-3 w-3 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              </span>
+              <Text size="small" className="text-emerald-900 dark:text-emerald-200 font-medium">
+                <strong>{restockedBackorders.length} order(s)</strong> in Backorders are restocked in warehouse and ready for allocation!
+              </Text>
+            </div>
+            <Button
+              size="small"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm shrink-0"
+              onClick={() => {
+                allocateBulkMutation.mutate(restockedBackorders.map((r) => r.order_id))
+              }}
+              disabled={allocateBulkMutation.isPending}
+            >
+              ⚡ Allocate All Restocked ({restockedBackorders.length})
+            </Button>
+          </div>
+        )}
+
         {/* Bulk bar — only the steps every selected order can actually take. */}
         {selectedRows.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-ui-border-strong bg-ui-bg-subtle p-3">
@@ -650,6 +704,19 @@ const OrderProcessingPage = () => {
             <Button size="small" variant="transparent" onClick={() => setSelected(new Set())}>
               Clear
             </Button>
+            {status === "backorder" && selectedRows.some((r) => r.can_allocate) && (
+              <Button
+                size="small"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm"
+                onClick={() => {
+                  const allocatable = selectedRows.filter((r) => r.can_allocate).map((r) => r.order_id)
+                  allocateBulkMutation.mutate(allocatable)
+                }}
+                disabled={allocateBulkMutation.isPending}
+              >
+                ⚡ Allocate Selected ({selectedRows.filter((r) => r.can_allocate).length})
+              </Button>
+            )}
             <div className="ml-auto flex flex-wrap gap-1.5">
               {bulkSteps.length === 0 ? (
                 <Text size="xsmall" className="text-ui-fg-muted">
@@ -739,7 +806,7 @@ const OrderProcessingPage = () => {
                     )}
                     <Table.Cell className="min-w-[220px] max-w-[340px]">
                       <div className="flex flex-col gap-y-1">
-                        <div className="flex items-center gap-x-1.5">
+                        <div className="flex items-center gap-x-1.5 flex-wrap">
                           <span className="font-semibold text-ui-fg-base truncate">{r.customer}</span>
                           {r.source === "manual" ? (
                             <Badge size="2xsmall" color="orange">
@@ -748,6 +815,11 @@ const OrderProcessingPage = () => {
                           ) : (
                             <Badge size="2xsmall" color="grey">
                               Website
+                            </Badge>
+                          )}
+                          {r.order_status === "backorder" && (
+                            <Badge size="2xsmall" color="orange">
+                              Backorder
                             </Badge>
                           )}
                         </div>
@@ -762,6 +834,31 @@ const OrderProcessingPage = () => {
                           <Text size="xsmall" className="text-ui-fg-muted italic">
                             —
                           </Text>
+                        )}
+                        {r.order_status === "backorder" && (
+                          <div className="flex items-center gap-x-2 pt-0.5" onClick={(e) => e.stopPropagation()}>
+                            {r.can_allocate ? (
+                              <button
+                                type="button"
+                                onClick={() => allocateMutation.mutate(r.order_id)}
+                                disabled={allocateMutation.isPending}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-md animate-pulse ring-2 ring-emerald-400 ring-offset-1 transition-all cursor-pointer"
+                              >
+                                ⚡ Allocate Now
+                              </button>
+                            ) : (
+                              <Tooltip
+                                content={
+                                  r.shortages?.map((s) => `${s.title}: needed ${s.requested}, only ${s.available} in warehouse`).join("; ") ||
+                                  "Awaiting warehouse restock"
+                                }
+                              >
+                                <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-2 py-0.5 rounded font-medium">
+                                  ⏳ Awaiting Restock ({r.shortages?.[0]?.available ?? 0} in stock)
+                                </span>
+                              </Tooltip>
+                            )}
+                          </div>
                         )}
                       </div>
                     </Table.Cell>
@@ -935,8 +1032,19 @@ const OrderProcessingPage = () => {
                     </Table.Cell>
 
                     {/* Stop the click here: this cell acts on the row, it doesn't open it. */}
-                    <Table.Cell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
+                    <Table.Cell className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {r.order_status === "backorder" && r.can_allocate && (
+                          <button
+                            type="button"
+                            onClick={() => allocateMutation.mutate(r.order_id)}
+                            disabled={allocateMutation.isPending}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-sm animate-pulse ring-2 ring-emerald-400 ring-offset-1 transition-all cursor-pointer"
+                          >
+                            ⚡ Allocate Now
+                          </button>
+                        )}
+                        <DropdownMenu>
                         <DropdownMenu.Trigger asChild>
                           <Tooltip content="Print this order's invoice, packing slip, the combined A4, or the A6 parcel slip.">
                             <Button
@@ -963,7 +1071,8 @@ const OrderProcessingPage = () => {
                           </DropdownMenu.Item>
                         </DropdownMenu.Content>
                       </DropdownMenu>
-                    </Table.Cell>
+                    </div>
+                  </Table.Cell>
                   </Table.Row>
                 )
               })}

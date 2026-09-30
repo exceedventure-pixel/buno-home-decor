@@ -80,6 +80,7 @@ export const PRODUCTION_TYPES: OrderType[] = ["pre_order", "custom"]
 /* ----------------------------------- order status ---------------------------------- */
 
 export const ORDER_STATUSES = [
+  "backorder",
   "new_order",
   "confirmed",
   "in_production",
@@ -115,6 +116,7 @@ export const ORDER_STATUS_META: Record<
   OrderStatus,
   { label: string; color: "grey" | "blue" | "green" | "orange" | "red" | "purple"; derived: boolean }
 > = {
+  backorder:         { label: "Backorders",        color: "orange", derived: true },
   new_order:         { label: "New Order",         color: "grey",   derived: false },
   confirmed:         { label: "Confirmed",         color: "blue",   derived: false },
   in_production:     { label: "In Production",     color: "purple", derived: false },
@@ -134,6 +136,7 @@ export const ORDER_STATUS_META: Record<
  * nobody confirmed.
  */
 export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+  backorder:         ["new_order", "cancelled", "on_hold"],
   new_order:         ["confirmed", "cancelled", "on_hold"],
   confirmed:         ["in_production", "ready_to_dispatch", "cancelled", "on_hold"],
   in_production:     ["ready_to_dispatch", "cancelled", "on_hold"],
@@ -197,6 +200,7 @@ export function storedStagesFor(type: OrderType): StoredStage[] {
  * excluded because they are not steps on the way anywhere.
  */
 export const ORDER_PIPELINE = [
+  "backorder",
   "new_order",
   "confirmed",
   "in_production",

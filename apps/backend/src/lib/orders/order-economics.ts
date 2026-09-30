@@ -1,8 +1,9 @@
 import type { MedusaContainer } from "@medusajs/framework/types"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 
 import { computeFifoCosting } from "../insights/fifo-costing"
 import { getSystemMode } from "../store/system-mode"
+import { requireSellableLocation } from "../inventory/stock-location"
 import { ORDER_PROCESSING_MODULE } from "../../modules/orderProcessing"
 import { PRODUCT_COST_MODULE } from "../../modules/productCost"
 import {
@@ -58,6 +59,11 @@ export type OrderEconomics = {
   payment_status: OrderPaymentStatus
   issue_status: IssueStatus
   stage: StoredStage
+
+  // Backorder and inventory allocation
+  is_backorder?: boolean
+  can_allocate?: boolean
+  shortages?: Array<{ title: string; requested: number; available: number }>
 
   // What we earn
   product_revenue: number
@@ -288,6 +294,65 @@ export async function computeOrderEconomics(
     }
   })
 
+  // Collect all variant IDs for unshipped, uncanceled ready_stock orders to check backorder & allocation status
+  const openVariantIds = new Set<string>()
+  for (const o of orders) {
+    const wf = wfByOrder.get(o.id)
+    const orderType = (wf?.order_type as OrderType) ?? "ready_stock"
+    if (orderType === "ready_stock" && !o.canceled_at) {
+      for (const it of o.items ?? []) {
+        if (it.variant_id) openVariantIds.add(it.variant_id)
+      }
+    }
+  }
+
+  // Load variant inventory levels and calculate available warehouse stock
+  const variantStockMap = new Map<string, { available: number; stocked: number; required: number; title: string }>()
+  if (openVariantIds.size > 0) {
+    try {
+      const inventory: any = container.resolve(Modules.INVENTORY)
+      const loc = await requireSellableLocation(container)
+      const { data: vData } = await query.graph({
+        entity: "product_variant",
+        fields: [
+          "id",
+          "title",
+          "manage_inventory",
+          "inventory_items.inventory_item_id",
+          "inventory_items.required_quantity",
+        ],
+        filters: { id: [...openVariantIds] },
+      })
+      const itemIds = (vData ?? [])
+        .map((v: any) => v.inventory_items?.[0]?.inventory_item_id)
+        .filter(Boolean)
+      const levels = itemIds.length
+        ? await inventory.listInventoryLevels({ inventory_item_id: itemIds, location_id: loc.id })
+        : []
+      const levelByItem = new Map<string, any>(levels.map((l: any) => [l.inventory_item_id, l]))
+
+      for (const v of (vData ?? []) as any[]) {
+        const itemId = v.inventory_items?.[0]?.inventory_item_id
+        const req = num(v.inventory_items?.[0]?.required_quantity) || 1
+        if (!itemId || v.manage_inventory === false) {
+          variantStockMap.set(v.id, { available: 999999, stocked: 999999, required: 1, title: v.title ?? v.id })
+          continue
+        }
+        const lvl = levelByItem.get(itemId)
+        const stocked = num(lvl?.stocked_quantity)
+        const reserved = num(lvl?.reserved_quantity)
+        variantStockMap.set(v.id, {
+          available: Math.max(0, stocked - reserved),
+          stocked,
+          required: req,
+          title: v.title ?? v.id,
+        })
+      }
+    } catch {
+      // Fallback if inventory location cannot be resolved
+    }
+  }
+
   return orders.map((o: any): OrderEconomics => {
     const wf = wfByOrder.get(o.id)
     const orderType: OrderType = (wf?.order_type as OrderType) ?? "ready_stock"
@@ -363,6 +428,47 @@ export async function computeOrderEconomics(
       // Lets the status tell a PARTIAL refund from a full one.
       captured_amount: captured,
     }
+
+    // ── Backorder & Allocation status ──────────────────────────────────────────
+    const isExplicitBackorder = Boolean(o.metadata?.is_backorder)
+    let isBackorder = false
+    let canAllocate = false
+    const shortages: Array<{ title: string; requested: number; available: number }> = []
+
+    if (
+      orderType === "ready_stock" &&
+      unitsShipped === 0 &&
+      !facts.canceled &&
+      !facts.delivered &&
+      facts.returned_qty === 0
+    ) {
+      let hasShortage = false
+      for (const it of o.items ?? []) {
+        if (!it.variant_id) continue
+        const outstanding = num(it.detail?.quantity) - num(it.detail?.fulfilled_quantity)
+        if (outstanding <= 0) continue
+        const stockInfo = variantStockMap.get(it.variant_id)
+        if (stockInfo) {
+          const needed = outstanding * stockInfo.required
+          if (stockInfo.available < needed) {
+            hasShortage = true
+            shortages.push({
+              title: it.product_title || it.title || stockInfo.title,
+              requested: needed,
+              available: stockInfo.available,
+            })
+          }
+        }
+      }
+
+      if (isExplicitBackorder || hasShortage) {
+        isBackorder = true
+        // If all items have restocked and available >= needed, it can be allocated!
+        canAllocate = shortages.length === 0
+      }
+    }
+
+    facts.is_backorder = isBackorder
 
     const orderStatus = resolveOrderStatus(stage, facts)
     const paymentStatus = derivePaymentStatus({
@@ -516,6 +622,10 @@ export async function computeOrderEconomics(
       payment_status: paymentStatus,
       issue_status: issue,
       stage,
+
+      is_backorder: isBackorder,
+      can_allocate: canAllocate,
+      shortages: shortages.length ? shortages : undefined,
 
       product_revenue: productRevenue,
       delivery_charged: deliveryCharged,

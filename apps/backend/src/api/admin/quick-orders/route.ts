@@ -2,7 +2,7 @@ import { createOrderWorkflow } from "@medusajs/core-flows"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { Modules } from "@medusajs/framework/utils"
 
-import { checkAvailability, reserveOrderItems } from "../../../lib/orders/reserve"
+import { checkAvailability, checkShortages, reserveOrderItems, type AvailabilityProblem } from "../../../lib/orders/reserve"
 import { ORDER_PROCESSING_MODULE } from "../../../modules/orderProcessing"
 import { ORDER_TYPES, type OrderType } from "../../../modules/orderProcessing/constants"
 import {
@@ -184,22 +184,16 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     return it.product_id ? { ...base, product_id: it.product_id } : base
   })
 
-  // Availability only matters when we're actually drawing from stock.
+  // Check inventory shortage. Manual orders are allowed even when out of stock;
+  // they automatically enter the Backorders queue until stock is restocked and allocated.
+  let shortages: AvailabilityProblem[] = []
   if (isReadyStock) {
-    const shortages = await checkAvailability(
+    shortages = await checkShortages(
       req.scope,
       items.map((i: any) => ({ variant_id: i.variant_id, quantity: i.quantity, title: i.title }))
     )
-    if (shortages.length) {
-      return res.status(400).json({
-        error: "Not enough stock to take this order.",
-        shortages,
-        message: shortages
-          .map((s) => `${s.title}: asked for ${s.requested}, only ${s.available} available`)
-          .join("; "),
-      })
-    }
   }
+  const isBackorder = shortages.length > 0
 
   const shipping_methods = b.shipping
     ? [
@@ -224,7 +218,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       billing_address: address,
       items,
       shipping_methods,
-      metadata: b.note ? { manual_note: b.note } : undefined,
+      metadata: {
+        ...(b.note ? { manual_note: b.note } : {}),
+        is_backorder: isBackorder,
+        ...(isBackorder ? { backorder_shortages: shortages } : {}),
+      },
     } as any,
   })
 
@@ -308,7 +306,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     order_id: orderId,
     order,
     order_type: orderType,
+    is_backorder: isBackorder,
+    shortages: isBackorder ? shortages : undefined,
     reservation,
-    warning: warnings.length ? warnings.join(" ") : undefined,
+    warning: isBackorder
+      ? `Placed as Backorder: ${shortages.map((s) => `${s.title} (${s.requested} needed, only ${s.available} in stock)`).join("; ")}. This order is waiting in the Backorders tab for restock.`
+      : (warnings.length ? warnings.join(" ") : undefined),
   })
 }
