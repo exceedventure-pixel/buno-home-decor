@@ -692,6 +692,7 @@ const OrderProcessingPage = () => {
                 {visibleColumns.payment && (
                   <Table.HeaderCell className="hidden sm:table-cell">Payment</Table.HeaderCell>
                 )}
+                <Table.HeaderCell className="hidden md:table-cell">Consignment</Table.HeaderCell>
                 <Table.HeaderCell className="hidden md:table-cell">Issue</Table.HeaderCell>
                 <Table.HeaderCell className="text-right">Total</Table.HeaderCell>
                 {visibleColumns.delivery && (
@@ -849,6 +850,22 @@ const OrderProcessingPage = () => {
                         )}
                       </Table.Cell>
                     )}
+                    {/* Consignment ID — visible once courier is booked */}
+                    <Table.Cell className="hidden md:table-cell">
+                      {r.consignment_id ? (
+                        <Tooltip
+                          content={r.tracking && r.tracking !== r.consignment_id
+                            ? `Tracking: ${r.tracking}`
+                            : "Consignment booked"}
+                        >
+                          <span className="font-mono text-xs text-ui-fg-base select-all cursor-text">
+                            {r.consignment_id}
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        <span className="text-ui-fg-muted text-xs">—</span>
+                      )}
+                    </Table.Cell>
                     <Table.Cell className="hidden md:table-cell">
                       {r.issue_status !== "none" && (
                         <Badge size="2xsmall" color={is.color}>
