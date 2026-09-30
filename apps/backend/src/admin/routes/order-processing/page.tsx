@@ -1,5 +1,5 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
-import { ChevronDownMini, PencilSquare, ShoppingBag } from "@medusajs/icons"
+import { ChevronDownMini, MagnifyingGlass, PencilSquare, ShoppingBag, XMark } from "@medusajs/icons"
 import {
   Badge,
   Button,
@@ -104,6 +104,7 @@ const OrderProcessingPage = () => {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all")
   const [sourceFilter, setSourceFilter] = useState<"all" | "website" | "manual">("all")
   const [status, setStatus] = useState<OrderStatusKey | "all">("all")
+  const [search, setSearch] = useState("")
   const [visibleColumns, setVisibleColumns] = useState<Record<OptionalColumnKey, boolean>>(() => {
     try {
       const saved = localStorage.getItem("buno_order_proc_columns")
@@ -323,10 +324,31 @@ const OrderProcessingPage = () => {
     return m
   }, [sourceRows])
 
-  const rows = useMemo(
+  const statusRows = useMemo(
     () => (status === "all" ? sourceRows : sourceRows.filter((r) => r.order_status === status)),
     [sourceRows, status]
   )
+
+  /**
+   * Full-text search — client-side against the already-loaded data so it's instant.
+   * Matches against: customer name, order # (with or without the #), tracking number,
+   * consignment ID, product names from items_summary, and the standing note.
+   */
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return statusRows
+    // Allow searching "123" or "#123" for display_id
+    const asNum = q.replace(/^#/, "")
+    return statusRows.filter((r) => {
+      if (r.customer?.toLowerCase().includes(q)) return true
+      if (String(r.display_id).includes(asNum)) return true
+      if (r.tracking?.toLowerCase().includes(q)) return true
+      if (r.consignment_id?.toLowerCase().includes(q)) return true
+      if (r.items_summary?.toLowerCase().includes(q)) return true
+      if (r.note?.toLowerCase().includes(q)) return true
+      return false
+    })
+  }, [statusRows, search])
 
   /**
    * A bulk step is offered only when EVERY selected order can legally take it. Offering a step
@@ -438,13 +460,13 @@ const OrderProcessingPage = () => {
               <Text size="small" weight="plus" className="text-ui-fg-base">
                 Filters &amp; Views
               </Text>
-              {(sourceFilter !== "all" || typeFilter !== "all" || status !== "all") && (
+              {(sourceFilter !== "all" || typeFilter !== "all" || status !== "all" || !!search) && (
                 <Badge size="2xsmall" color="blue">
                   Active
                 </Badge>
               )}
             </div>
-            {(sourceFilter !== "all" || typeFilter !== "all" || status !== "all") && (
+            {(sourceFilter !== "all" || typeFilter !== "all" || status !== "all" || !!search) && (
               <Button
                 size="small"
                 variant="transparent"
@@ -453,9 +475,11 @@ const OrderProcessingPage = () => {
                   setSourceFilter("all")
                   setTypeFilter("all")
                   setStatus("all")
+                  setSearch("")
+                  setSelected(new Set())
                 }}
               >
-                Reset filters
+                Reset all
               </Button>
             )}
           </div>
@@ -555,6 +579,38 @@ const OrderProcessingPage = () => {
               })}
             </div>
           </div>
+        </div>
+
+        {/* Search bar — instant client-side filter across customer, order #, tracking, products, notes */}
+        <div className="relative flex items-center gap-x-2">
+          <div className="relative flex-1">
+            <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ui-fg-muted pointer-events-none" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setSelected(new Set())
+              }}
+              placeholder="Search by customer name, #order, tracking, product…"
+              className="w-full h-9 pl-9 pr-9 rounded-lg border border-ui-border-base bg-ui-bg-field text-sm text-ui-fg-base placeholder:text-ui-fg-muted focus:outline-none focus:ring-2 focus:ring-ui-border-interactive transition-shadow"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => { setSearch(""); setSelected(new Set()) }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ui-fg-muted hover:text-ui-fg-base transition-colors"
+                aria-label="Clear search"
+              >
+                <XMark className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          {search.trim() && (
+            <span className="shrink-0 text-xs text-ui-fg-subtle whitespace-nowrap">
+              {rows.length} result{rows.length !== 1 ? "s" : ""}
+            </span>
+          )}
         </div>
 
         {/* Money for whatever is in view */}
