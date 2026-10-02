@@ -66,13 +66,27 @@ export async function GET(
     }
   }
 
+  const latestRestock = batches.find((b: any) => b.source === "restock") ?? batches[0]
+  const latestUnitCost = latestRestock
+    ? (Number(latestRestock.unit_cost) || 0)
+    : (costRow ? Number(costRow.cost) || 0 : 0)
+  const latestLandedCost = latestRestock
+    ? (Number(latestRestock.landed_unit_cost) || 0)
+    : (costRow ? Number(costRow.cost) || 0 : 0)
+  const latestFreight = latestRestock
+    ? Math.max(0, latestLandedCost - latestUnitCost)
+    : 0
+
   res.json({
     current_qty: currentQty,
     reserved_qty: reserved,
     available_qty: Math.max(0, currentQty - reserved),
     location: location ? { id: location.id, name: location.name } : null,
     setup_problem: problem,
-    latest_cost: costRow ? Number(costRow.cost) : 0,
+    latest_cost: latestUnitCost,
+    latest_unit_cost: latestUnitCost,
+    latest_freight: latestFreight,
+    latest_landed_cost: latestLandedCost,
     packaging_cost: costRow ? Number(costRow.packaging_cost) : 0,
     batches,
     movements: (movements ?? []).map((m: any) => ({

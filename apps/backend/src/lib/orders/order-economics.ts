@@ -430,19 +430,33 @@ export async function computeOrderEconomics(
     }
 
     // ── Backorder & Allocation status ──────────────────────────────────────────
+    // An order is in the Backorders tab ONLY if:
+    // 1. It was explicitly created/flagged as a backorder (insufficient inventory at placement).
+    // 2. It has NOT been allocated yet (no allocated_at, and is_backorder is not false).
+    // 3. It has NOT been booked with a courier (consignment_id, tracking_id, or courier_booked stage).
+    // 4. It has not shipped or delivered.
+    // 5. It is ready_stock and not canceled.
     const isExplicitBackorder = Boolean(o.metadata?.is_backorder)
+    const isAllocated = Boolean(o.metadata?.allocated_at) || o.metadata?.is_backorder === false
+    const hasCourierShipment = Boolean(
+      consignmentId || trackingId || wf?.consignment_id || wf?.tracking_id || stage === "courier_booked"
+    )
+
     let isBackorder = false
     let canAllocate = false
     const shortages: Array<{ title: string; requested: number; available: number }> = []
 
     if (
+      isExplicitBackorder &&
+      !isAllocated &&
+      !hasCourierShipment &&
       orderType === "ready_stock" &&
       unitsShipped === 0 &&
       !facts.canceled &&
       !facts.delivered &&
       facts.returned_qty === 0
     ) {
-      let hasShortage = false
+      isBackorder = true
       for (const it of o.items ?? []) {
         if (!it.variant_id) continue
         const outstanding = num(it.detail?.quantity) - num(it.detail?.fulfilled_quantity)
@@ -451,7 +465,6 @@ export async function computeOrderEconomics(
         if (stockInfo) {
           const needed = outstanding * stockInfo.required
           if (stockInfo.available < needed) {
-            hasShortage = true
             shortages.push({
               title: it.product_title || it.title || stockInfo.title,
               requested: needed,
@@ -461,11 +474,8 @@ export async function computeOrderEconomics(
         }
       }
 
-      if (isExplicitBackorder || hasShortage) {
-        isBackorder = true
-        // If all items have restocked and available >= needed, it can be allocated!
-        canAllocate = shortages.length === 0
-      }
+      // If all items have restocked and available >= needed, it can be allocated!
+      canAllocate = shortages.length === 0
     }
 
     facts.is_backorder = isBackorder

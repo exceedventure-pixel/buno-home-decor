@@ -288,4 +288,15 @@ export const opApi = {
       `/order-processing/allocate-bulk`,
       { method: "POST", body: JSON.stringify({ order_ids: orderIds }) }
     ),
+
+  resolveDelivered: (opts: { order_ids?: string[]; display_ids?: number[] } = {}) =>
+    rbacFetch<{
+      success: boolean
+      resolved: any[]
+      errors: any[]
+      message: string
+    }>(`/order-processing/resolve-delivered`, {
+      method: "POST",
+      body: JSON.stringify(opts),
+    }),
 }

@@ -113,7 +113,7 @@ const ProductCostWidget = ({ data: product }: { data: { id: string } }) => {
                 </div>
                 <div className="flex flex-col gap-y-1">
                   <Label size="small" className="text-ui-fg-muted">
-                    {isBasic ? "Cost / unit" : "Cost / unit (last batch)"}
+                    {isBasic ? "Cost / unit" : "Landed / unit (last batch)"}
                   </Label>
                   <Text size="small" className="text-right font-medium tabular-nums">
                     {money(selected.cost, cur)}

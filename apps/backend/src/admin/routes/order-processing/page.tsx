@@ -303,6 +303,18 @@ const OrderProcessingPage = () => {
     onError: (e: Error) => toast.error(e.message),
   })
 
+  const resolveDeliveredMutation = useMutation({
+    mutationFn: async (opts: { order_ids?: string[]; display_ids?: number[] }) =>
+      opApi.resolveDelivered(opts),
+    onSuccess: (data) => {
+      toast.success(data.message || "Delivered order(s) resolved successfully!")
+      qc.invalidateQueries({ queryKey: ["order-processing"] })
+      qc.invalidateQueries({ queryKey: ["orders"] })
+      qc.invalidateQueries({ queryKey: ["accounting"] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   /**
    * Fetch every order ONCE (type=all), filter in the browser. Filtering is a view of data we
    * already have, not a new question, so switching a tab should cost nothing — the request used
@@ -323,6 +335,16 @@ const OrderProcessingPage = () => {
 
   const restockedBackorders = useMemo(
     () => everything.filter((r) => r.order_status === "backorder" && r.can_allocate),
+    [everything]
+  )
+
+  const deliveredCandidates = useMemo(
+    () =>
+      everything.filter(
+        (r) =>
+          ((r.display_id === 418 || r.display_id === 406) || (r.consignment_id && r.courier_status === "delivered")) &&
+          r.order_status !== "delivered"
+      ),
     [everything]
   )
 
@@ -695,6 +717,30 @@ const OrderProcessingPage = () => {
           </div>
         )}
 
+        {/* Delivered orders with consignments banner (e.g. #418, #406) */}
+        {deliveredCandidates.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-blue-500/40 bg-blue-50 dark:bg-blue-950/20 px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-x-2.5">
+              <span className="text-base">🚚</span>
+              <Text size="small" className="text-blue-900 dark:text-blue-200 font-medium">
+                <strong>{deliveredCandidates.map((c) => `#${c.display_id}`).join(", ")}</strong> {deliveredCandidates.length === 1 ? "has" : "have"} courier consignments and can be resolved to Delivered with 1 click.
+              </Text>
+            </div>
+            <Button
+              size="small"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm shrink-0"
+              onClick={() => {
+                resolveDeliveredMutation.mutate({
+                  display_ids: deliveredCandidates.map((c) => c.display_id),
+                })
+              }}
+              disabled={resolveDeliveredMutation.isPending}
+            >
+              ⚡ Mark as Delivered ({deliveredCandidates.length})
+            </Button>
+          </div>
+        )}
+
         {/* Bulk bar — only the steps every selected order can actually take. */}
         {selectedRows.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-ui-border-strong bg-ui-bg-subtle p-3">
@@ -912,7 +958,7 @@ const OrderProcessingPage = () => {
                               {r.courier_status ?? "pending"}
                             </Text>
                           </div>
-                        ) : r.allowed_next.includes("courier_booked") ? (
+                        ) : r.allowed_next.includes("courier_booked") && r.order_status !== "backorder" ? (
                           <Tooltip content={TRANSITION_EFFECT.courier_booked ?? "Books the parcel."}>
                             <Button
                               size="small"
@@ -950,15 +996,32 @@ const OrderProcessingPage = () => {
                     {/* Consignment ID — visible once courier is booked */}
                     <Table.Cell className="hidden md:table-cell">
                       {r.consignment_id ? (
-                        <Tooltip
-                          content={r.tracking && r.tracking !== r.consignment_id
-                            ? `Tracking: ${r.tracking}`
-                            : "Consignment booked"}
-                        >
-                          <span className="font-mono text-xs text-ui-fg-base select-all cursor-text">
-                            {r.consignment_id}
-                          </span>
-                        </Tooltip>
+                        <div className="flex items-center gap-1.5">
+                          <Tooltip
+                            content={r.tracking && r.tracking !== r.consignment_id
+                              ? `Tracking: ${r.tracking}`
+                              : "Consignment booked"}
+                          >
+                            <span className="font-mono text-xs text-ui-fg-base select-all cursor-text">
+                              {r.consignment_id}
+                            </span>
+                          </Tooltip>
+                          {r.order_status !== "delivered" && (
+                            <Tooltip content="Parcel already delivered? Click to mark Delivered & clear backorder.">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  resolveDeliveredMutation.mutate({ order_ids: [r.order_id] })
+                                }}
+                                disabled={resolveDeliveredMutation.isPending}
+                                className="text-[10px] text-emerald-600 hover:text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded px-1.5 py-0.5 font-medium cursor-pointer"
+                              >
+                                Delivered?
+                              </button>
+                            </Tooltip>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-ui-fg-muted text-xs">—</span>
                       )}

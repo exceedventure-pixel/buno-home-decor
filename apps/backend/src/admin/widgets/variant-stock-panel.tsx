@@ -225,15 +225,22 @@ export function VariantStockPanel({ variantId, cur = "bdt" }: { variantId: strin
   const [mode, setMode] = useState<Mode>("restock")
   const [quantity, setQuantity] = useState("")
   const [unitCost, setUnitCost] = useState("")
-  const [freight, setFreight] = useState("0")
+  const [freight, setFreight] = useState("")
   const [date, setDate] = useState<Date>(new Date())
   const [supplier, setSupplier] = useState("")
   const [reason, setReason] = useState<"shrinkage" | "damage" | "correction">("shrinkage")
   const [note, setNote] = useState("")
 
-  // Prefill the cost with the variant's latest landed cost once loaded.
+  // Prefill the cost with the variant's latest base cost and freight from its latest batch.
   useEffect(() => {
-    if (stock && unitCost === "" && stock.latest_cost > 0) setUnitCost(String(stock.latest_cost))
+    if (stock) {
+      const baseCost = stock.latest_unit_cost ?? stock.latest_cost
+      if (unitCost === "" && baseCost > 0) setUnitCost(String(baseCost))
+      if (freight === "") {
+        const lastFreight = stock.latest_freight ?? 0
+        setFreight(lastFreight > 0 ? String(lastFreight) : "0")
+      }
+    }
   }, [stock]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const qtyNum = Number(quantity)
@@ -247,7 +254,10 @@ export function VariantStockPanel({ variantId, cur = "bdt" }: { variantId: strin
 
   const resetForm = () => {
     setQuantity("")
-    setFreight("0")
+    const baseCost = stock?.latest_unit_cost ?? stock?.latest_cost ?? 0
+    setUnitCost(baseCost > 0 ? String(baseCost) : "")
+    const lastFreight = stock?.latest_freight ?? 0
+    setFreight(lastFreight > 0 ? String(lastFreight) : "0")
     setSupplier("")
     setNote("")
     setReason("shrinkage")
@@ -340,7 +350,7 @@ export function VariantStockPanel({ variantId, cur = "bdt" }: { variantId: strin
               variantId={variantId}
               currentQty={currentQty}
               batchBacked={batchBacked}
-              lastCost={stock?.latest_cost ?? 0}
+              lastCost={stock?.latest_landed_cost ?? stock?.latest_cost ?? 0}
               cur={cur}
               onDone={invalidate}
             />
@@ -427,7 +437,7 @@ export function VariantStockPanel({ variantId, cur = "bdt" }: { variantId: strin
               step="0.01"
               value={freight}
               onChange={(e) => setFreight(e.target.value)}
-              placeholder="0"
+              placeholder={stock?.latest_freight ? String(stock.latest_freight) : "0"}
             />
             <Text size="xsmall" className="text-ui-fg-muted">
               Per item, not the whole lot

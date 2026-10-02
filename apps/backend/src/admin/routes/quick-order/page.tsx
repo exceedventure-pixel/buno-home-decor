@@ -1,6 +1,6 @@
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { ShoppingBag, Trash, Plus } from "@medusajs/icons"
-import { Badge, Button, Container, Heading, Input, Label, Select, Text, toast } from "@medusajs/ui"
+import { Badge, Button, Container, Heading, Input, Label, Prompt, Select, Text, toast } from "@medusajs/ui"
 import { useEffect, useState } from "react"
 import { MoneyInput } from "../../components/money-input"
 import { QtyStepper } from "../../components/qty-stepper"
@@ -105,6 +105,12 @@ const QuickOrderPage = () => {
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchVariant[]>([])
   const [lines, setLines] = useState<Line[]>([])
+  const [stockMap, setStockMap] = useState<
+    Record<string, { available: number; stocked: number; manage_inventory: boolean }>
+  >({})
+  const [backorderWarning, setBackorderWarning] = useState<
+    Array<{ title: string; requested: number; available: number }> | null
+  >(null)
 
   const [creating, setCreating] = useState(false)
   const [created, setCreated] = useState<{ id: string; warning?: string } | null>(null)
@@ -168,6 +174,20 @@ const QuickOrderPage = () => {
           }
         }
         setResults(flat)
+        if (flat.length > 0) {
+          adminFetch<{
+            stock: Record<
+              string,
+              { available: number; stocked: number; manage_inventory: boolean }
+            >
+          }>(`/quick-orders?variant_ids=${flat.map((f) => f.variant_id).join(",")}`)
+            .then((data) => {
+              if (data?.stock) {
+                setStockMap((prev) => ({ ...prev, ...data.stock }))
+              }
+            })
+            .catch(() => {})
+        }
       } catch {
         /* ignore */
       }
@@ -235,6 +255,62 @@ const QuickOrderPage = () => {
     setProdFreight("0")
   }
 
+  const executeCreate = async () => {
+    setCreating(true)
+    try {
+      const resp = await adminFetch<{ order_id: string; warning?: string; is_backorder?: boolean }>(
+        "/quick-orders",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            order_type: orderType,
+            customer: {
+              name,
+              phone,
+              email: email.trim() || undefined,
+              address_1: address,
+              city,
+              postal_code: postal,
+              country_code: "bd",
+            },
+            items: lines.map((l) => ({
+              title: l.title,
+              quantity: l.quantity,
+              unit_price: l.unit_price,
+              ...(orderType === "ready_stock"
+                ? { variant_id: l.variant_id, product_id: l.product_id }
+                : orderType === "pre_order" && l.product_id
+                  ? { product_id: l.product_id }
+                  : {}),
+            })),
+            region_id: regionId,
+            sales_channel_id: channelId,
+            shipping: { name: "Delivery", amount: Number(delivery) || 0, shipping_option_id: shipOptId },
+            currency_code: currency,
+            advance_amount: advanceNum,
+            discount_amount: discountAmount,
+            production_cost: isProduction ? Number(production) || 0 : 0,
+            production_freight: isProduction ? Number(prodFreight) || 0 : 0,
+            note: note.trim() || undefined,
+          }),
+        }
+      )
+      setCreated({ id: resp.order_id, warning: resp.warning })
+      if (resp.is_backorder) {
+        toast.warning(resp.warning || "Order placed as Backorder awaiting restock.")
+      } else if (resp.warning) {
+        toast.warning(resp.warning)
+      } else {
+        toast.success("Order created")
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Failed to create order")
+    } finally {
+      setCreating(false)
+      setBackorderWarning(null)
+    }
+  }
+
   const create = async () => {
     if (!name.trim() || !phone.trim() || !address.trim())
       return toast.error("Name, phone and address are required")
@@ -243,52 +319,26 @@ const QuickOrderPage = () => {
       return toast.error("Give every custom item a name")
     if (!channelId || !regionId) return toast.error("Sales channel / region not loaded")
 
-    setCreating(true)
-    try {
-      const resp = await adminFetch<{ order_id: string; warning?: string }>("/quick-orders", {
-        method: "POST",
-        body: JSON.stringify({
-          order_type: orderType,
-          customer: {
-            name,
-            phone,
-            email: email.trim() || undefined,
-            address_1: address,
-            city,
-            postal_code: postal,
-            country_code: "bd",
-          },
-          items: lines.map((l) => ({
+    if (orderType === "ready_stock") {
+      const shortages: Array<{ title: string; requested: number; available: number }> = []
+      for (const l of lines) {
+        if (!l.variant_id) continue
+        const s = stockMap[l.variant_id]
+        if (s && s.manage_inventory && l.quantity > s.available) {
+          shortages.push({
             title: l.title,
-            quantity: l.quantity,
-            unit_price: l.unit_price,
-            // Ready-stock carries the variant (draws stock). Pre-order keeps only the product
-            // for identity; custom carries neither — that's what keeps stock untouched.
-            ...(orderType === "ready_stock"
-              ? { variant_id: l.variant_id, product_id: l.product_id }
-              : orderType === "pre_order" && l.product_id
-                ? { product_id: l.product_id }
-                : {}),
-          })),
-          region_id: regionId,
-          sales_channel_id: channelId,
-          shipping: { name: "Delivery", amount: Number(delivery) || 0, shipping_option_id: shipOptId },
-          currency_code: currency,
-          advance_amount: advanceNum,
-          discount_amount: discountAmount,
-          production_cost: isProduction ? Number(production) || 0 : 0,
-          production_freight: isProduction ? Number(prodFreight) || 0 : 0,
-          note: note.trim() || undefined,
-        }),
-      })
-      setCreated({ id: resp.order_id, warning: resp.warning })
-      if (resp.warning) toast.warning(resp.warning)
-      else toast.success("Order created")
-    } catch (e: any) {
-      toast.error(e.message || "Failed to create order")
-    } finally {
-      setCreating(false)
+            requested: l.quantity,
+            available: s.available,
+          })
+        }
+      }
+      if (shortages.length > 0) {
+        setBackorderWarning(shortages)
+        return
+      }
     }
+
+    await executeCreate()
   }
 
   const resetForm = () => {
@@ -389,19 +439,31 @@ const QuickOrderPage = () => {
               />
               {results.length > 0 && (
                 <div className="absolute z-10 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-ui-border-base bg-ui-bg-base shadow-lg">
-                  {results.map((r) => (
-                    <button
-                      key={r.variant_id}
-                      onClick={() => addFromCatalogue(r)}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-ui-bg-subtle"
-                    >
-                      <Text size="small" className="truncate">{r.title}</Text>
-                      <span className="flex items-center gap-1 text-ui-fg-muted">
-                        <Text size="xsmall">{fmt(r.unit_price)}</Text>
-                        <Plus className="w-3 h-3" />
-                      </span>
-                    </button>
-                  ))}
+                  {results.map((r) => {
+                    const st = stockMap[r.variant_id]
+                    const hasStock = st?.available != null
+                    const isZero = hasStock && st.available <= 0
+                    return (
+                      <button
+                        key={r.variant_id}
+                        onClick={() => addFromCatalogue(r)}
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-ui-bg-subtle"
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <Text size="small" className="truncate">{r.title}</Text>
+                          {orderType === "ready_stock" && hasStock && st.manage_inventory && (
+                            <Badge size="2xsmall" color={isZero ? "orange" : "green"}>
+                              {isZero ? "0 in stock (Backorder)" : `${st.available} in stock`}
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="flex items-center gap-1 text-ui-fg-muted shrink-0">
+                          <Text size="xsmall">{fmt(r.unit_price)}</Text>
+                          <Plus className="w-3 h-3" />
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -427,24 +489,39 @@ const QuickOrderPage = () => {
                   className="flex flex-col gap-2 rounded-lg border border-ui-border-base p-3 sm:flex-row sm:items-center sm:gap-2 sm:rounded-none sm:border-0 sm:p-0"
                 >
                   {/* Row 1 on mobile: the item name (or label) + remove */}
-                  <div className="flex items-center gap-2 sm:flex-1 sm:min-w-0">
-                    {isCustom ? (
-                      <Input
-                        className="flex-1 min-w-0"
-                        placeholder="Item name"
-                        value={l.title}
-                        onChange={(e) => updateLine(l.key, { title: e.target.value })}
-                      />
-                    ) : (
-                      <Text size="small" className="flex-1 min-w-0 truncate">{l.title}</Text>
+                  <div className="flex flex-col sm:flex-1 sm:min-w-0">
+                    <div className="flex items-center gap-2">
+                      {isCustom ? (
+                        <Input
+                          className="flex-1 min-w-0"
+                          placeholder="Item name"
+                          value={l.title}
+                          onChange={(e) => updateLine(l.key, { title: e.target.value })}
+                        />
+                      ) : (
+                        <Text size="small" className="flex-1 min-w-0 truncate font-medium">{l.title}</Text>
+                      )}
+                      <button
+                        onClick={() => removeLine(l.key)}
+                        className="shrink-0 text-ui-fg-muted hover:text-ui-fg-error sm:hidden"
+                        aria-label="Remove item"
+                      >
+                        <Trash className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {orderType === "ready_stock" && l.variant_id && stockMap[l.variant_id] && (
+                      <div className="pt-0.5">
+                        {l.quantity > stockMap[l.variant_id].available ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded px-1.5 py-0.5 font-medium">
+                            ⚠️ Backorder: only {stockMap[l.variant_id].available} in stock ({l.quantity} requested)
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                            ✓ {stockMap[l.variant_id].available} in warehouse stock
+                          </span>
+                        )}
+                      </div>
                     )}
-                    <button
-                      onClick={() => removeLine(l.key)}
-                      className="shrink-0 text-ui-fg-muted hover:text-ui-fg-error sm:hidden"
-                      aria-label="Remove item"
-                    >
-                      <Trash className="w-4 h-4" />
-                    </button>
                   </div>
 
                   {/* Row 2 on mobile: qty × price = total, each labelled */}
@@ -593,6 +670,54 @@ const QuickOrderPage = () => {
             Create {TYPE_INFO[orderType].label} order
           </Button>
         </div>
+
+        {/* Backorder Confirmation Warning Modal */}
+        <Prompt open={!!backorderWarning} onOpenChange={(v) => !v && setBackorderWarning(null)}>
+          <Prompt.Content>
+            <Prompt.Header>
+              <Prompt.Title>⚠️ Stock Shortage — Place as Backorder?</Prompt.Title>
+              <Prompt.Description>
+                One or more items in this order exceed available warehouse inventory.
+              </Prompt.Description>
+            </Prompt.Header>
+            <div className="px-6 py-2 space-y-2.5">
+              <Text size="small" className="text-ui-fg-subtle">
+                The following shortages were detected:
+              </Text>
+              <div className="rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-1.5">
+                {backorderWarning?.map((sh, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-xs">
+                    <span className="font-semibold text-amber-900 dark:text-amber-200">{sh.title}</span>
+                    <span className="text-amber-800 dark:text-amber-300">
+                      Requested: <strong>{sh.requested}</strong> | In stock: <strong>{sh.available}</strong>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-md bg-ui-bg-subtle border border-ui-border-base p-2.5 text-xs text-ui-fg-muted space-y-1">
+                <p>
+                  📌 <strong>What happens next:</strong>
+                </p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  <li>This order will be created with status <strong>Backorder</strong>.</li>
+                  <li>It will sit in the <strong>Backorders</strong> tab awaiting restock.</li>
+                  <li><strong>It CANNOT be booked with a courier</strong> until stock is restocked and allocated.</li>
+                </ul>
+              </div>
+            </div>
+            <Prompt.Footer>
+              <Prompt.Cancel>Cancel</Prompt.Cancel>
+              <Button
+                size="small"
+                className="bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-sm"
+                isLoading={creating}
+                onClick={executeCreate}
+              >
+                Confirm &amp; Place Backorder
+              </Button>
+            </Prompt.Footer>
+          </Prompt.Content>
+        </Prompt>
       </Container>
     </div>
   )

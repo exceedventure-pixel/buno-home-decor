@@ -56,10 +56,18 @@ export async function bookCourierParcel(
     )
   }
 
+  // Check backorder guard: orders with stock shortages cannot be booked with a courier
+  const [econ] = await computeOrderEconomics(container, { order_id: orderId })
+  if (econ?.order_status === "backorder" || econ?.is_backorder) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      "Cannot book courier for a backorder. Stock must be restocked and allocated before booking with a courier."
+    )
+  }
+
   // COD to collect: explicit override, else the order's outstanding balance.
   let cod = opts?.cod_amount
   if (cod == null) {
-    const [econ] = await computeOrderEconomics(container, { order_id: orderId })
     cod = Math.max(0, Number(econ?.outstanding ?? 0))
   }
   cod = Math.max(0, Number(cod) || 0)

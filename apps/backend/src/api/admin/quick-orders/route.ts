@@ -1,7 +1,8 @@
 import { createOrderWorkflow } from "@medusajs/core-flows"
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { Modules } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 
+import { requireSellableLocation } from "../../../lib/inventory/stock-location"
 import { checkAvailability, checkShortages, reserveOrderItems, type AvailabilityProblem } from "../../../lib/orders/reserve"
 import { ORDER_PROCESSING_MODULE } from "../../../modules/orderProcessing"
 import { ORDER_TYPES, type OrderType } from "../../../modules/orderProcessing/constants"
@@ -314,3 +315,85 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       : (warnings.length ? warnings.join(" ") : undefined),
   })
 }
+
+/**
+ * GET /admin/quick-orders?variant_ids=id1,id2
+ *
+ * Returns live available warehouse stock and inventory tracking status for variants,
+ * so the manual order screen can warn staff if an item will be placed on backorder.
+ */
+export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
+  const { variant_ids } = req.query as { variant_ids?: string }
+  if (!variant_ids) {
+    return res.json({ stock: {} })
+  }
+  const ids = variant_ids
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (!ids.length) {
+    return res.json({ stock: {} })
+  }
+
+  const stock: Record<
+    string,
+    { available: number; stocked: number; reserved: number; manage_inventory: boolean; title: string }
+  > = {}
+
+  try {
+    const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
+    const inventory: any = req.scope.resolve(Modules.INVENTORY)
+    const loc = await requireSellableLocation(req.scope)
+
+    const { data: vData } = await query.graph({
+      entity: "product_variant",
+      fields: [
+        "id",
+        "title",
+        "manage_inventory",
+        "inventory_items.inventory_item_id",
+        "inventory_items.required_quantity",
+      ],
+      filters: { id: ids },
+    })
+
+    const itemIds = (vData ?? [])
+      .map((v: any) => v.inventory_items?.[0]?.inventory_item_id)
+      .filter(Boolean)
+    const levels = itemIds.length
+      ? await inventory.listInventoryLevels({ inventory_item_id: itemIds, location_id: loc.id })
+      : []
+    const levelByItem = new Map<string, any>(levels.map((l: any) => [l.inventory_item_id, l]))
+
+    for (const v of (vData ?? []) as any[]) {
+      const itemId = v.inventory_items?.[0]?.inventory_item_id
+      const reqQty = Number(v.inventory_items?.[0]?.required_quantity) || 1
+      if (!itemId || v.manage_inventory === false) {
+        stock[v.id] = {
+          available: 999999,
+          stocked: 999999,
+          reserved: 0,
+          manage_inventory: false,
+          title: v.title ?? v.id,
+        }
+        continue
+      }
+      const lvl = levelByItem.get(itemId)
+      const stocked = Number(lvl?.stocked_quantity) || 0
+      const reserved = Number(lvl?.reserved_quantity) || 0
+      const available = Math.max(0, Math.floor((stocked - reserved) / reqQty))
+      stock[v.id] = {
+        available,
+        stocked,
+        reserved,
+        manage_inventory: true,
+        title: v.title ?? v.id,
+      }
+    }
+  } catch (err: any) {
+    // Return graceful partial result on error
+  }
+
+  res.json({ stock })
+}
+

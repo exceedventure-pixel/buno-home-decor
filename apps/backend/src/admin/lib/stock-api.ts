@@ -56,6 +56,9 @@ export type VariantStock = {
   location: { id: string; name: string } | null
   setup_problem: SetupProblem | null
   latest_cost: number
+  latest_unit_cost?: number
+  latest_freight?: number
+  latest_landed_cost?: number
   batches: Batch[]
   movements: VariantMovement[]
 }
