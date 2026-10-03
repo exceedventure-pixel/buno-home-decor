@@ -22,7 +22,7 @@ import { useNavigate } from "react-router-dom"
 
 import { MoneyInput } from "../../components/money-input"
 import { OrphanWarning } from "../../components/orphan-warning"
-import { printOrder, type PrintMode } from "../../lib/print"
+import { PRINT_SIZES, printMultipleOrders, printOrder, type PrintMode } from "../../lib/print"
 import { money } from "../../lib/kpi"
 import {
   ISSUE_STATUS_META,
@@ -151,6 +151,24 @@ const OrderProcessingPage = () => {
   const [noteEdit, setNoteEdit] = useState<NoteEdit | null>(null)
   const [noteDraft, setNoteDraft] = useState("")
   const [printing, setPrinting] = useState<string | null>(null)
+  const [bulkPrinting, setBulkPrinting] = useState(false)
+  const [printSize, setPrintSize] = useState<PrintMode>(() => {
+    try {
+      const saved = typeof window !== "undefined" ? localStorage.getItem("buno_order_print_size") : null
+      if (saved && (saved === "a6" || saved === "combined" || saved === "packing" || saved === "invoice")) {
+        return saved as PrintMode
+      }
+    } catch {}
+    return "a6"
+  })
+
+  const handleSetPrintSize = (size: PrintMode) => {
+    setPrintSize(size)
+    try {
+      localStorage.setItem("buno_order_print_size", size)
+      toast.success(`Print format set to ${PRINT_SIZES[size].label}`)
+    } catch {}
+  }
   // Courier fee is revised after weighing on nearly every parcel, so it's editable straight from
   // the queue — opening each order to change one number was the whole complaint.
   const [feeEdit, setFeeEdit] = useState<FeeEdit | null>(null)
@@ -506,6 +524,42 @@ const OrderProcessingPage = () => {
                 ))}
               </DropdownMenu.Content>
             </DropdownMenu>
+
+            {/* Print Size Selector — lets the user pick the default print format directly */}
+            <DropdownMenu>
+              <DropdownMenu.Trigger asChild>
+                <Button size="small" variant="secondary" className="flex items-center gap-x-1.5">
+                  <span>🖨️ Print:</span>
+                  <span className="font-semibold text-ui-fg-base">{PRINT_SIZES[printSize]?.shortLabel ?? "A6 Slip"}</span>
+                  <ChevronDownMini className="w-3.5 h-3.5" />
+                </Button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content align="end" className="w-64 p-2 space-y-1 z-50 bg-ui-bg-base border border-ui-border-base shadow-lg rounded-lg">
+                <div className="flex items-center justify-between pb-1.5 mb-1 border-b border-ui-border-base px-2">
+                  <Text size="xsmall" weight="plus" className="text-ui-fg-muted uppercase tracking-wider">
+                    Default Print Size
+                  </Text>
+                  <Badge size="2xsmall" color="green">Active: {PRINT_SIZES[printSize]?.paperSize}</Badge>
+                </div>
+                {(Object.keys(PRINT_SIZES) as PrintMode[]).map((mode) => (
+                  <DropdownMenu.Item
+                    key={mode}
+                    onClick={() => handleSetPrintSize(mode)}
+                    className={`flex flex-col items-start px-2 py-1.5 rounded cursor-pointer transition-colors ${
+                      printSize === mode ? "bg-ui-bg-base-hover font-medium" : ""
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-sm font-medium">{PRINT_SIZES[mode].label}</span>
+                      {printSize === mode && <span className="text-xs text-emerald-600 font-bold">✓</span>}
+                    </div>
+                    <span className="text-[11px] text-ui-fg-muted mt-0.5 leading-snug">
+                      {PRINT_SIZES[mode].description}
+                    </span>
+                  </DropdownMenu.Item>
+                ))}
+              </DropdownMenu.Content>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -746,6 +800,37 @@ const OrderProcessingPage = () => {
           </div>
         )}
 
+        {/* Courier Booked banner with quick print size toggle */}
+        {status === "courier_booked" && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-ui-border-base bg-ui-bg-subtle/80 px-4 py-2.5 shadow-xs">
+            <div className="flex items-center gap-x-2.5">
+              <span className="text-base">🖨️</span>
+              <Text size="small" className="text-ui-fg-base">
+                <strong>Courier Booked Queue:</strong> Row <strong>Print</strong> button directly prints <strong>{PRINT_SIZES[printSize].label}</strong>.
+              </Text>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Text size="xsmall" className="text-ui-fg-muted font-medium">Print size:</Text>
+              <div className="inline-flex rounded-lg border border-ui-border-base bg-ui-bg-field p-0.5 shadow-2xs">
+                {(Object.keys(PRINT_SIZES) as PrintMode[]).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => handleSetPrintSize(m)}
+                    className={`px-2.5 py-1 text-xs rounded-md font-medium transition-all cursor-pointer ${
+                      printSize === m
+                        ? "bg-ui-button-inverted text-ui-button-inverted-fg shadow-xs font-semibold"
+                        : "text-ui-fg-subtle hover:text-ui-fg-base hover:bg-ui-bg-subtle"
+                    }`}
+                  >
+                    {PRINT_SIZES[m].shortLabel}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Bulk bar — only the steps every selected order can actually take. */}
         {selectedRows.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-ui-border-strong bg-ui-bg-subtle p-3">
@@ -768,7 +853,70 @@ const OrderProcessingPage = () => {
                 ⚡ Allocate Selected ({selectedRows.filter((r) => r.can_allocate).length})
               </Button>
             )}
-            <div className="ml-auto flex flex-wrap gap-1.5">
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {/* PRINT ALL BUTTON — right beside the stage transition button */}
+              <div className="inline-flex items-center rounded-md border border-ui-border-base bg-ui-bg-field shadow-2xs overflow-hidden">
+                <Button
+                  size="small"
+                  variant="secondary"
+                  disabled={bulkPrinting}
+                  onClick={async () => {
+                    const ids = selectedRows.map((r) => r.order_id)
+                    setBulkPrinting(true)
+                    try {
+                      await printMultipleOrders(ids, printSize)
+                      toast.success(`Sent ${ids.length} orders to print dialog (${PRINT_SIZES[printSize].shortLabel})`)
+                    } catch (e: any) {
+                      toast.error(e?.message || "Failed to print orders")
+                    } finally {
+                      setBulkPrinting(false)
+                    }
+                  }}
+                  className="flex items-center gap-1.5 font-semibold text-ui-fg-base hover:bg-ui-bg-subtle"
+                  title={`Print all ${selectedRows.length} selected orders in one single print job (${PRINT_SIZES[printSize].label})`}
+                >
+                  {bulkPrinting ? (
+                    <span className="animate-pulse">Preparing all…</span>
+                  ) : (
+                    <>
+                      <span>🖨️</span>
+                      <span>Print All ({selectedRows.length})</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-ui-bg-subtle text-ui-fg-muted font-medium">
+                        {PRINT_SIZES[printSize].shortLabel}
+                      </span>
+                    </>
+                  )}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenu.Trigger asChild>
+                    <button
+                      type="button"
+                      className="px-1.5 py-1.5 border-l border-ui-border-base text-ui-fg-muted hover:text-ui-fg-base hover:bg-ui-bg-subtle transition-colors cursor-pointer"
+                      title="Change print size for Print All"
+                    >
+                      <ChevronDownMini className="w-3.5 h-3.5" />
+                    </button>
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content align="end" className="w-56 p-1 z-50 bg-ui-bg-base border border-ui-border-base shadow-lg rounded-lg">
+                    <div className="px-2 py-1 text-[10px] uppercase font-bold text-ui-fg-muted border-b border-ui-border-base mb-1">
+                      Print All Format
+                    </div>
+                    {(Object.keys(PRINT_SIZES) as PrintMode[]).map((m) => (
+                      <DropdownMenu.Item
+                        key={m}
+                        onClick={() => handleSetPrintSize(m)}
+                        className={`flex items-center justify-between text-xs py-1.5 cursor-pointer ${
+                          printSize === m ? "bg-ui-bg-base-hover font-semibold text-emerald-600" : ""
+                        }`}
+                      >
+                        <span>{PRINT_SIZES[m].label}</span>
+                        {printSize === m && <span>✓</span>}
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu>
+              </div>
+
               {bulkSteps.length === 0 ? (
                 <Text size="xsmall" className="text-ui-fg-muted">
                   No step is available to all of these — they're at different stages.
@@ -779,8 +927,13 @@ const OrderProcessingPage = () => {
                     key={s}
                     content={`${TRANSITION_EFFECT[s] ?? ORDER_STATUS_META[s].label} Runs once per selected order.`}
                   >
-                    <Button size="small" variant="secondary" onClick={() => setBulkTo(s)}>
-                      {BULK_LABEL[s] ?? ORDER_STATUS_META[s].label}
+                    <Button
+                      size="small"
+                      variant={s === "dispatched" ? "primary" : "secondary"}
+                      className={s === "dispatched" ? "bg-blue-600 hover:bg-blue-700 text-white font-semibold" : ""}
+                      onClick={() => setBulkTo(s)}
+                    >
+                      {s === "dispatched" ? `🚚 ${BULK_LABEL[s] ?? ORDER_STATUS_META[s].label}` : BULK_LABEL[s] ?? ORDER_STATUS_META[s].label}
                     </Button>
                   </Tooltip>
                 ))
@@ -821,7 +974,7 @@ const OrderProcessingPage = () => {
                   <Table.HeaderCell className="text-right">Net</Table.HeaderCell>
                 )}
                 <Table.HeaderCell className="min-w-[160px] max-w-[260px]">Notes</Table.HeaderCell>
-                <Table.HeaderCell className="text-right">Print</Table.HeaderCell>
+                <Table.HeaderCell className="text-right">Print ({PRINT_SIZES[printSize]?.shortLabel ?? "A6"})</Table.HeaderCell>
               </Table.Row>
             </Table.Header>
             <Table.Body>
@@ -1178,41 +1331,90 @@ const OrderProcessingPage = () => {
                             </button>
                           ) : null
                         )}
-                        <DropdownMenu>
-                        <DropdownMenu.Trigger asChild>
-                          <Tooltip content="Print this order's invoice, packing slip, the combined A4, or the A6 parcel slip.">
-                            <Button
-                              size="small"
-                              variant="secondary"
+                        {/* Direct 1-Click Print Button for the selected print size */}
+                        <div
+                          className="inline-flex items-center rounded-md border border-ui-border-base bg-ui-bg-field shadow-2xs overflow-hidden"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Tooltip content={`1-click print: ${PRINT_SIZES[printSize].label}`}>
+                            <button
+                              type="button"
                               disabled={printing === r.order_id}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                print(r.order_id, printSize)
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-ui-fg-base hover:bg-ui-bg-subtle disabled:opacity-50 transition-colors cursor-pointer"
                             >
-                              {printing === r.order_id ? "…" : "Print"}
-                            </Button>
+                              {printing === r.order_id ? (
+                                <span className="animate-pulse">Printing…</span>
+                              ) : (
+                                <>
+                                  <span>🖨️</span>
+                                  <span>Print</span>
+                                </>
+                              )}
+                            </button>
                           </Tooltip>
-                        </DropdownMenu.Trigger>
-                        <DropdownMenu.Content>
-                          <DropdownMenu.Item onClick={() => print(r.order_id, "invoice")}>
-                            Invoice
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Item onClick={() => print(r.order_id, "packing")}>
-                            Packing slip
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Item onClick={() => print(r.order_id, "combined")}>
-                            Combined A4
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Item onClick={() => print(r.order_id, "a6")}>
-                            A6 packing slip
-                          </DropdownMenu.Item>
-                        </DropdownMenu.Content>
-                      </DropdownMenu>
-                    </div>
-                  </Table.Cell>
+                          <DropdownMenu>
+                            <DropdownMenu.Trigger asChild onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                className="px-1.5 py-1 border-l border-ui-border-base text-ui-fg-muted hover:text-ui-fg-base hover:bg-ui-bg-subtle transition-colors cursor-pointer"
+                                title="Print other format or change size"
+                              >
+                                <ChevronDownMini className="w-3.5 h-3.5" />
+                              </button>
+                            </DropdownMenu.Trigger>
+                            <DropdownMenu.Content align="end" className="w-56 p-1 z-50 bg-ui-bg-base border border-ui-border-base shadow-lg rounded-lg">
+                              <div className="px-2 py-1 text-[10px] uppercase font-bold text-ui-fg-muted border-b border-ui-border-base mb-1">
+                                Print #{r.display_id}
+                              </div>
+                              {(Object.keys(PRINT_SIZES) as PrintMode[]).map((m) => (
+                                <DropdownMenu.Item
+                                  key={m}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    print(r.order_id, m)
+                                  }}
+                                  className="flex items-center justify-between text-xs py-1.5 cursor-pointer"
+                                >
+                                  <span>{PRINT_SIZES[m].label}</span>
+                                  {printSize === m && (
+                                    <span className="text-[10px] text-emerald-600 font-semibold">(Default)</span>
+                                  )}
+                                </DropdownMenu.Item>
+                              ))}
+                              <DropdownMenu.Separator />
+                              <div className="px-2 py-1 text-[10px] uppercase font-bold text-ui-fg-muted border-t border-ui-border-base mt-1">
+                                Set Default Size
+                              </div>
+                              {(Object.keys(PRINT_SIZES) as PrintMode[]).map((m) => (
+                                <DropdownMenu.Item
+                                  key={`set-${m}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleSetPrintSize(m)
+                                  }}
+                                  className={`flex items-center justify-between text-xs py-1 cursor-pointer ${
+                                    printSize === m ? "text-emerald-600 font-semibold" : ""
+                                  }`}
+                                >
+                                  <span>Use {PRINT_SIZES[m].shortLabel}</span>
+                                  {printSize === m && <span>✓</span>}
+                                </DropdownMenu.Item>
+                              ))}
+                            </DropdownMenu.Content>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    </Table.Cell>
                   </Table.Row>
                 )
               })}
               {!isLoading && rows.length === 0 && (
                 <Table.Row>
-                  <Table.Cell colSpan={14}>
+                  <Table.Cell colSpan={16}>
                     <Text size="small" className="py-6 text-ui-fg-muted">
                       Nothing in this queue.
                     </Text>

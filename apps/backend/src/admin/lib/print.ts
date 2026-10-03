@@ -384,21 +384,126 @@ async function loadStore(): Promise<Store> {
 
 export type PrintMode = "invoice" | "packing" | "combined" | "a6"
 
+export const PRINT_SIZES: Record<
+  PrintMode,
+  {
+    id: PrintMode
+    label: string
+    shortLabel: string
+    description: string
+    paperSize: "A6" | "A4"
+  }
+> = {
+  a6: {
+    id: "a6",
+    label: "A6 Parcel Slip (105×148mm)",
+    shortLabel: "A6 Slip",
+    description: "Standard courier parcel sticker with consignment ID & shipping info",
+    paperSize: "A6",
+  },
+  combined: {
+    id: "combined",
+    label: "Combined A4 (Invoice + Slip)",
+    shortLabel: "Combined A4",
+    description: "Full invoice on top half + packing slip on bottom half (cut-line)",
+    paperSize: "A4",
+  },
+  packing: {
+    id: "packing",
+    label: "A4 Packing Slip",
+    shortLabel: "A4 Packing",
+    description: "Full-page packing checklist with courier consignment details",
+    paperSize: "A4",
+  },
+  invoice: {
+    id: "invoice",
+    label: "A4 Invoice",
+    shortLabel: "A4 Invoice",
+    description: "Full customer bill with itemized prices, totals & advance/COD",
+    paperSize: "A4",
+  },
+}
+
 /**
- * BUILD AND PRINT ONE OF THE ORDER DOCUMENTS.
- *
- * Lives here rather than in the print widget because the order-processing queue prints the same
- * documents — two copies of this would drift, and the templates are the part people notice.
- *
- * Throws on failure so the caller can surface it however suits (toast, inline error).
+ * Print raw HTML directly without browser popup blocker interference using a hidden iframe.
+ * If iframe printing fails, it falls back to a blob window.
  */
-export async function printOrder(orderId: string, mode: PrintMode): Promise<void> {
+export function printHtmlDirect(html: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    try {
+      let iframe = document.getElementById("__buno_print_frame") as HTMLIFrameElement | null
+      if (iframe) {
+        iframe.remove()
+      }
+      iframe = document.createElement("iframe")
+      iframe.id = "__buno_print_frame"
+      iframe.style.position = "fixed"
+      iframe.style.right = "0"
+      iframe.style.bottom = "0"
+      iframe.style.width = "0"
+      iframe.style.height = "0"
+      iframe.style.border = "0"
+      iframe.style.opacity = "0"
+      iframe.style.pointerEvents = "none"
+      iframe.setAttribute("aria-hidden", "true")
+      document.body.appendChild(iframe)
+
+      const doc = iframe.contentWindow?.document
+      if (!doc) {
+        throw new Error("Unable to open print frame context")
+      }
+
+      doc.open()
+      doc.write(html)
+      doc.close()
+
+      const win = iframe.contentWindow
+      if (!win) throw new Error("Print window not available")
+
+      const triggerPrint = () => {
+        try {
+          win.focus()
+          win.print()
+          resolve()
+        } catch (err) {
+          reject(err)
+        }
+      }
+
+      if (doc.readyState === "complete") {
+        setTimeout(triggerPrint, 350)
+      } else {
+        win.onload = () => setTimeout(triggerPrint, 350)
+      }
+    } catch (err) {
+      // Fallback: If iframe printing is blocked, use blob URL
+      try {
+        const blob = new Blob([html], { type: "text/html" })
+        const url = URL.createObjectURL(blob)
+        const w = window.open(url, "_blank")
+        if (!w) {
+          throw new Error("Popup blocked by browser. Please allow popups or use another browser.")
+        }
+        w.focus()
+        setTimeout(() => {
+          try {
+            w.print()
+          } catch {}
+          URL.revokeObjectURL(url)
+          resolve()
+        }, 500)
+      } catch (fallbackErr) {
+        reject(err || fallbackErr)
+      }
+    }
+  })
+}
+
+export async function getOrderPrintData(orderId: string): Promise<{ order: any; econ: Econ }> {
   const { order: full } = await adminFetch<{ order: any }>(
     `/orders/${orderId}?fields=id,display_id,created_at,email,currency_code,payment_status,fulfillment_status,total,item_total,subtotal,shipping_total,discount_total,metadata,*items,*shipping_address`
   )
 
-  // Advance / outstanding come from the order-processing economics, the one source that knows
-  // what was actually captured vs still owed.
   let econ: Econ = null
   try {
     const { order: e } = await adminFetch<{ order: Econ }>(`/order-processing/${orderId}`)
@@ -407,6 +512,16 @@ export async function printOrder(orderId: string, mode: PrintMode): Promise<void
     /* fall back to order totals if economics is unavailable */
   }
 
+  return { order: full, econ }
+}
+
+/**
+ * BUILD AND PRINT ONE OF THE ORDER DOCUMENTS.
+ *
+ * Uses hidden iframe printing to prevent browser pop-up blockers from interrupting dispatch.
+ */
+export async function printOrder(orderId: string, mode: PrintMode): Promise<void> {
+  const { order: full, econ } = await getOrderPrintData(orderId)
   const store = await loadStore()
   const html =
     mode === "combined"
@@ -415,10 +530,88 @@ export async function printOrder(orderId: string, mode: PrintMode): Promise<void
         ? a6PackingDoc(full, econ, store)
         : singleDoc(full, econ, store, mode)
 
-  const w = window.open("", "_blank", "width=900,height=1000")
-  if (!w) throw new Error("Allow pop-ups to print")
-  w.document.write(html)
-  w.document.close()
-  w.focus()
-  setTimeout(() => w.print(), 400)
+  await printHtmlDirect(html)
+}
+
+/**
+ * BULK PRINT MULTIPLE ORDERS IN ONE PRINT JOB.
+ *
+ * Concatenates orders with clean page breaks so the browser print dialog
+ * prints every slip or invoice in the selected format in one go.
+ */
+export async function printMultipleOrders(orderIds: string[], mode: PrintMode): Promise<void> {
+  if (!orderIds.length) return
+  if (orderIds.length === 1) {
+    return printOrder(orderIds[0], mode)
+  }
+
+  const store = await loadStore()
+  const settled = await Promise.allSettled(orderIds.map((id) => getOrderPrintData(id)))
+  const items = settled
+    .filter((s): s is PromiseFulfilledResult<{ order: any; econ: Econ }> => s.status === "fulfilled")
+    .map((s) => s.value)
+
+  if (!items.length) {
+    throw new Error("Failed to load details for any of the selected orders")
+  }
+
+  let bodyHtml = ""
+  if (mode === "a6") {
+    bodyHtml = items
+      .map(
+        ({ order, econ }, idx) => `
+        <div class="print-page a6-page" style="${idx < items.length - 1 ? "page-break-after:always; break-after:page;" : ""}; width:105mm; height:148mm; padding:4mm; box-sizing:border-box; overflow:hidden;">
+          <div class="slip" style="width:97mm; height:140mm; border:1px dashed #ccc; border-radius:6px; padding:8mm 7mm; overflow:hidden;">
+            ${packingBody(order, econ, store, true)}
+          </div>
+        </div>
+      `
+      )
+      .join("")
+  } else if (mode === "combined") {
+    bodyHtml = items
+      .map(
+        ({ order, econ }, idx) => `
+        <div class="print-page sheet" style="${idx < items.length - 1 ? "page-break-after:always; break-after:page;" : ""}; width:210mm; height:297mm; display:flex; flex-direction:column; overflow:hidden;">
+          <div class="top" style="height:180mm; padding:12mm 12mm 6mm; overflow:hidden;">${invoiceBody(order, econ, store, true)}</div>
+          <div class="cut" style="border-top:1.5px dashed #999; position:relative;"></div>
+          <div class="bottom" style="flex:1; padding:6mm 12mm 10mm; overflow:hidden;">
+            <div class="slip" style="height:100%; border:1px dashed #ccc; border-radius:6px; padding:6mm 8mm; overflow:hidden;">
+              ${packingBody(order, econ, store, true)}
+            </div>
+          </div>
+        </div>
+      `
+      )
+      .join("")
+  } else {
+    bodyHtml = items
+      .map(
+        ({ order, econ }, idx) => `
+        <div class="print-page single-page" style="${idx < items.length - 1 ? "page-break-after:always; break-after:page;" : ""}; overflow:hidden;">
+          ${mode === "invoice" ? invoiceBody(order, econ, store, false) : packingBody(order, econ, store, false)}
+        </div>
+      `
+      )
+      .join("")
+  }
+
+  const pageCss =
+    mode === "a6"
+      ? `@page { size:A6; margin:0; } body { padding:0; margin:0; }`
+      : mode === "combined"
+        ? `@page { size:A4; margin:0; } .cut::after { content:"✂ cut here"; position:absolute; top:-8px; left:12mm; background:#fff; padding:0 6px; font-size:9px; color:#999; }`
+        : `@page { size:A4; margin:0; }`
+
+  const fullHtml = `<!doctype html><html><head><meta charset="utf-8">
+  <title>Print ${items.length} Orders (${PRINT_SIZES[mode].shortLabel})</title>
+  <style>
+    ${STYLES}
+    ${pageCss}
+    @media print {
+      body { margin:0; padding:0; }
+    }
+  </style></head><body>${bodyHtml}</body></html>`
+
+  await printHtmlDirect(fullHtml)
 }
