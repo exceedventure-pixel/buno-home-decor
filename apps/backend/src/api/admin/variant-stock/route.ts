@@ -1,5 +1,5 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
-import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
+import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 
 import { listEnrichedBatches } from "../../../lib/insights/batch-log"
 import { getCanonicalLocation } from "../../../lib/inventory/stock-location"

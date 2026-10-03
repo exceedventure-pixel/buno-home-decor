@@ -514,7 +514,7 @@ export async function computeOrderEconomics(
 
     let isBackorder = false
     let canAllocate = false
-    const shortages: Array<{ title: string; requested: number; available: number }> = []
+    const shortages: NonNullable<OrderEconomics["shortages"]> = []
 
     if (
       isExplicitBackorder &&
