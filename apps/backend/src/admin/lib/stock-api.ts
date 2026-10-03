@@ -59,6 +59,14 @@ export type VariantStock = {
   latest_unit_cost?: number
   latest_freight?: number
   latest_landed_cost?: number
+  reservations?: Array<{
+    id: string
+    quantity: number
+    order_id: string | null
+    display_id: number | null
+    customer_name: string
+    created_at: string
+  }>
   batches: Batch[]
   movements: VariantMovement[]
 }

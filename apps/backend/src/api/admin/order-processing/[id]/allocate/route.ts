@@ -14,10 +14,11 @@ import { ORDER_PROCESSING_MODULE } from "../../../../../modules/orderProcessing"
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const orderId = req.params.id
   const actorId = req.auth_context?.actor_id ?? null
+  const { force } = (req.body ?? {}) as { force?: boolean }
 
-  const reserveResult = await reserveOrderItems(req.scope, orderId)
+  const reserveResult = await reserveOrderItems(req.scope, orderId, { force: Boolean(force) })
 
-  if (reserveResult.shortages.length > 0) {
+  if (!force && reserveResult.shortages.length > 0) {
     throw new MedusaError(
       MedusaError.Types.NOT_ALLOWED,
       `Cannot allocate yet: stock is still insufficient for ${reserveResult.shortages
@@ -57,7 +58,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       to_value: "new_order",
       actor_id: actorId,
       source: "admin",
-      note: "Stock allocated from warehouse restock. Order moved to New Orders.",
+      note: force
+        ? "Stock force-allocated by admin. Order moved to New Orders."
+        : "Stock allocated from warehouse restock. Order moved to New Orders.",
     },
   ])
 
@@ -67,6 +70,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     success: true,
     order_id: orderId,
     order: econ,
-    message: "Stock successfully allocated! Order moved to New Orders.",
+    message: force
+      ? "Stock force-allocated! Order moved to New Orders."
+      : "Stock successfully allocated! Order moved to New Orders.",
   })
 }

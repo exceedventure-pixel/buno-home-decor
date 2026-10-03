@@ -8,6 +8,7 @@ import { ORDER_PROCESSING_MODULE } from "../../../../modules/orderProcessing"
 import { requireSellableLocation } from "../../../../lib/inventory/stock-location"
 import { computeOrderEconomics } from "../../../../lib/orders/order-economics"
 import { captureOutstandingCod } from "../../../../lib/orders/capture"
+import { reserveOrderItems } from "../../../../lib/orders/reserve"
 
 /**
  * POST /admin/order-processing/resolve-delivered
@@ -72,7 +73,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   for (const o of orders) {
     try {
-      // 1. Clear is_backorder on metadata
+      // 1. Clear is_backorder on metadata and mark delivered
       const curMeta = (o as any).metadata ?? {}
       await orderSvc.updateOrders([
         {
@@ -82,6 +83,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
             is_backorder: false,
             backorder_shortages: null,
             allocated_at: curMeta.allocated_at || new Date().toISOString(),
+            delivered_at: new Date().toISOString(),
             resolved_delivered_at: new Date().toISOString(),
           },
         },
@@ -109,49 +111,63 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         ])
       }
 
-      // 3. Fulfill items if unfulfilled
-      const location = await requireSellableLocation(req.scope)
-      const unfulfilledItems = ((o as any).items ?? [])
-        .map((it: any) => ({
-          id: it.id,
-          quantity: Number(it.detail?.quantity ?? it.quantity ?? 1) - Number(it.detail?.fulfilled_quantity ?? 0),
-        }))
-        .filter((i: any) => i.quantity > 0)
+      // 3. Fulfill items if unfulfilled (best-effort: goods are physically delivered)
+      try {
+        const location = await requireSellableLocation(req.scope)
+        const unfulfilledItems = ((o as any).items ?? [])
+          .map((it: any) => ({
+            id: it.id,
+            quantity: Number(it.detail?.quantity ?? it.quantity ?? 1) - Number(it.detail?.fulfilled_quantity ?? 0),
+          }))
+          .filter((i: any) => i.quantity > 0)
 
-      let fulfillmentId: string | null = null
-      const existingFulfillment = ((o as any).fulfillments ?? []).find(
-        (f: any) => !f.canceled_at && !f.delivered_at
-      )
+        let fulfillmentId: string | null = null
+        const existingFulfillment = ((o as any).fulfillments ?? []).find(
+          (f: any) => !f.canceled_at && !f.delivered_at
+        )
 
-      if (existingFulfillment) {
-        fulfillmentId = existingFulfillment.id
-      } else if (unfulfilledItems.length > 0) {
-        const { result: fulfillment } = await createOrderFulfillmentWorkflow(req.scope).run({
-          input: {
-            order_id: o.id,
-            items: unfulfilledItems,
-            location_id: location.id,
-            data: {
-              courier_status: "delivered",
-              consignment_id: consignmentId,
-            },
-          } as any,
-        })
-        fulfillmentId = (fulfillment as any)?.id
-      }
+        if (existingFulfillment) {
+          fulfillmentId = existingFulfillment.id
+        } else if (unfulfilledItems.length > 0) {
+          // Pre-reserve stock with force: true so createOrderFulfillmentWorkflow has reservation items
+          try {
+            await reserveOrderItems(req.scope, o.id, { force: true })
+          } catch {
+            // Ignore reservation errors
+          }
 
-      // 4. Mark fulfillment as delivered if not already delivered
-      if (fulfillmentId) {
-        try {
-          await markOrderFulfillmentAsDeliveredWorkflow(req.scope).run({
+          const { result: fulfillment } = await createOrderFulfillmentWorkflow(req.scope).run({
             input: {
-              orderId: o.id,
-              fulfillmentId,
-            },
+              order_id: o.id,
+              items: unfulfilledItems,
+              location_id: location.id,
+              data: {
+                courier_status: "delivered",
+                consignment_id: consignmentId,
+              },
+            } as any,
           })
-        } catch {
-          // If already delivered in Medusa, ignore
+          fulfillmentId = (fulfillment as any)?.id
         }
+
+        // 4. Mark fulfillment as delivered if not already delivered
+        if (fulfillmentId) {
+          try {
+            await markOrderFulfillmentAsDeliveredWorkflow(req.scope).run({
+              input: {
+                orderId: o.id,
+                fulfillmentId,
+              },
+            })
+          } catch {
+            // If already delivered in Medusa, ignore
+          }
+        }
+      } catch (fulfilErr: any) {
+        // Physical goods have already arrived at the customer via courier.
+        // If Medusa warehouse validation blocks fulfillment creation, log and continue.
+        const logger: any = req.scope.resolve("logger")
+        logger?.warn(`[resolve-delivered] Could not fulfill order #${o.display_id}: ${fulfilErr.message}`)
       }
 
       // 5. Capture COD payment

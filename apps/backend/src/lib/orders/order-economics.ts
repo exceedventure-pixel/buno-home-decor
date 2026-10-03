@@ -63,7 +63,14 @@ export type OrderEconomics = {
   // Backorder and inventory allocation
   is_backorder?: boolean
   can_allocate?: boolean
-  shortages?: Array<{ title: string; requested: number; available: number }>
+  shortages?: Array<{
+    title: string
+    requested: number
+    available: number
+    stocked?: number
+    reserved?: number
+    reserved_by?: Array<{ display_id: number | null; customer: string; quantity: number; order_id?: string | null }>
+  }>
 
   // What we earn
   product_revenue: number
@@ -306,8 +313,36 @@ export async function computeOrderEconomics(
     }
   }
 
+  // Map line items to their order display_id and customer name so we can trace reservations
+  const lineItemToOrderMap = new Map<string, { display_id: number; customer: string; order_id: string }>()
+  for (const o of orders) {
+    const custName =
+      [o.shipping_address?.first_name, o.shipping_address?.last_name].filter(Boolean).join(" ") ||
+      o.email ||
+      `Order #${o.display_id}`
+    for (const it of o.items ?? []) {
+      if (it.id) {
+        lineItemToOrderMap.set(it.id, {
+          display_id: num(o.display_id),
+          customer: custName,
+          order_id: o.id,
+        })
+      }
+    }
+  }
+
   // Load variant inventory levels and calculate available warehouse stock
-  const variantStockMap = new Map<string, { available: number; stocked: number; required: number; title: string }>()
+  const variantStockMap = new Map<
+    string,
+    {
+      available: number
+      stocked: number
+      reserved: number
+      required: number
+      title: string
+      reservations: Array<{ display_id: number | null; customer: string; quantity: number; order_id?: string | null }>
+    }
+  >()
   if (openVariantIds.size > 0) {
     try {
       const inventory: any = container.resolve(Modules.INVENTORY)
@@ -326,26 +361,57 @@ export async function computeOrderEconomics(
       const itemIds = (vData ?? [])
         .map((v: any) => v.inventory_items?.[0]?.inventory_item_id)
         .filter(Boolean)
-      const levels = itemIds.length
-        ? await inventory.listInventoryLevels({ inventory_item_id: itemIds, location_id: loc.id })
-        : []
+
+      const [levels, allReservations] = await Promise.all([
+        itemIds.length
+          ? inventory.listInventoryLevels({ inventory_item_id: itemIds, location_id: loc.id })
+          : [],
+        itemIds.length
+          ? inventory.listReservationItems({ inventory_item_id: itemIds }).catch(() => [])
+          : [],
+      ])
       const levelByItem = new Map<string, any>(levels.map((l: any) => [l.inventory_item_id, l]))
+      const reservationsByItem = new Map<
+        string,
+        Array<{ display_id: number | null; customer: string; quantity: number; order_id?: string | null }>
+      >()
+      for (const res of allReservations ?? []) {
+        const list = reservationsByItem.get(res.inventory_item_id) ?? []
+        const ordInfo = lineItemToOrderMap.get(res.line_item_id)
+        list.push({
+          quantity: num(res.quantity),
+          display_id: ordInfo?.display_id ?? null,
+          customer: ordInfo?.customer ?? "Customer",
+          order_id: ordInfo?.order_id ?? null,
+        })
+        reservationsByItem.set(res.inventory_item_id, list)
+      }
 
       for (const v of (vData ?? []) as any[]) {
         const itemId = v.inventory_items?.[0]?.inventory_item_id
         const req = num(v.inventory_items?.[0]?.required_quantity) || 1
         if (!itemId || v.manage_inventory === false) {
-          variantStockMap.set(v.id, { available: 999999, stocked: 999999, required: 1, title: v.title ?? v.id })
+          variantStockMap.set(v.id, {
+            available: 999999,
+            stocked: 999999,
+            reserved: 0,
+            required: 1,
+            title: v.title ?? v.id,
+            reservations: [],
+          })
           continue
         }
         const lvl = levelByItem.get(itemId)
         const stocked = num(lvl?.stocked_quantity)
         const reserved = num(lvl?.reserved_quantity)
+        const resList = reservationsByItem.get(itemId) ?? []
         variantStockMap.set(v.id, {
           available: Math.max(0, stocked - reserved),
           stocked,
+          reserved,
           required: req,
           title: v.title ?? v.id,
+          reservations: resList,
         })
       }
     } catch {
@@ -417,7 +483,11 @@ export async function computeOrderEconomics(
     const courierStatus =
       wf?.courier_status ?? courierData.find((d: any) => d.courier_status)?.courier_status ?? null
     const courierDelivered =
-      courierStatus === "delivered" || courierData.some((d: any) => d.courier_status === "delivered")
+      courierStatus === "delivered" ||
+      wf?.stage === "delivered" ||
+      Boolean(o.metadata?.delivered_at) ||
+      Boolean(o.metadata?.resolved_delivered_at) ||
+      courierData.some((d: any) => d.courier_status === "delivered")
 
     const facts: OrderFacts = {
       canceled: !!o.canceled_at,
@@ -469,6 +539,9 @@ export async function computeOrderEconomics(
               title: it.product_title || it.title || stockInfo.title,
               requested: needed,
               available: stockInfo.available,
+              stocked: stockInfo.stocked,
+              reserved: stockInfo.reserved,
+              reserved_by: stockInfo.reservations ?? [],
             })
           }
         }

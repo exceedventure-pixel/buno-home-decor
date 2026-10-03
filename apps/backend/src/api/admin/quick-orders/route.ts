@@ -206,26 +206,70 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       ]
     : []
 
-  const { result: order } = await createOrderWorkflow(req.scope).run({
-    input: {
-      region_id: b.region_id,
-      sales_channel_id: b.sales_channel_id,
-      customer_id: customerId,
-      email,
-      currency_code: (b.currency_code || "bdt").toLowerCase(),
-      status: "pending",
-      no_notification: true,
-      shipping_address: address,
-      billing_address: address,
-      items,
-      shipping_methods,
-      metadata: {
-        ...(b.note ? { manual_note: b.note } : {}),
-        is_backorder: isBackorder,
-        ...(isBackorder ? { backorder_shortages: shortages } : {}),
-      },
-    } as any,
-  })
+  // If this order contains backordered items, Medusa's createOrderWorkflow validates
+  // inventory availability and rejects variants that have allow_backorder: false.
+  // We temporarily set allow_backorder: true during order creation and restore afterwards.
+  const productSvc: any = req.scope.resolve(Modules.PRODUCT)
+  const variantsToRevert: string[] = []
+
+  if (isBackorder) {
+    for (const sh of shortages) {
+      if (sh.variant_id) {
+        try {
+          const [pv] = await productSvc.listProductVariants({ id: sh.variant_id })
+          if (pv && !pv.allow_backorder) {
+            variantsToRevert.push(sh.variant_id)
+          }
+        } catch {
+          // Best-effort check
+        }
+      }
+    }
+  }
+
+  const uniqueVariantsToRevert = Array.from(new Set(variantsToRevert))
+
+  let order: any
+  try {
+    if (uniqueVariantsToRevert.length) {
+      await productSvc.updateProductVariants(
+        uniqueVariantsToRevert.map((id) => ({ id, allow_backorder: true }))
+      )
+    }
+
+    const { result } = await createOrderWorkflow(req.scope).run({
+      input: {
+        region_id: b.region_id,
+        sales_channel_id: b.sales_channel_id,
+        customer_id: customerId,
+        email,
+        currency_code: (b.currency_code || "bdt").toLowerCase(),
+        status: "pending",
+        no_notification: true,
+        shipping_address: address,
+        billing_address: address,
+        items,
+        shipping_methods,
+        metadata: {
+          ...(b.note ? { manual_note: b.note } : {}),
+          is_backorder: isBackorder,
+          ...(isBackorder ? { backorder_shortages: shortages } : {}),
+        },
+      } as any,
+    })
+    order = result
+  } finally {
+    if (uniqueVariantsToRevert.length) {
+      try {
+        await productSvc.updateProductVariants(
+          uniqueVariantsToRevert.map((id) => ({ id, allow_backorder: false }))
+        )
+      } catch (err: any) {
+        const logger: any = req.scope.resolve("logger")
+        logger?.error(`[quick-orders] Failed to revert allow_backorder: ${err.message}`)
+      }
+    }
+  }
 
   const orderId = (order as any)?.id
   const advance = Math.max(0, Number(b.advance_amount) || 0)

@@ -280,7 +280,8 @@ const OrderProcessingPage = () => {
   })
 
   const allocateMutation = useMutation({
-    mutationFn: async (orderId: string) => opApi.allocate(orderId),
+    mutationFn: async ({ orderId, force }: { orderId: string; force?: boolean }) =>
+      opApi.allocate(orderId, { force }),
     onSuccess: (data) => {
       toast.success(data.message || "Stock allocated! Order moved to New Orders.")
       qc.invalidateQueries({ queryKey: ["order-processing"] })
@@ -307,7 +308,11 @@ const OrderProcessingPage = () => {
     mutationFn: async (opts: { order_ids?: string[]; display_ids?: number[] }) =>
       opApi.resolveDelivered(opts),
     onSuccess: (data) => {
-      toast.success(data.message || "Delivered order(s) resolved successfully!")
+      if (data.errors?.length && !data.resolved?.length) {
+        toast.error(`Could not resolve: ${data.errors[0]?.error || "Fulfillment error"}`)
+      } else {
+        toast.success(data.message || "Delivered order(s) resolved successfully!")
+      }
       qc.invalidateQueries({ queryKey: ["order-processing"] })
       qc.invalidateQueries({ queryKey: ["orders"] })
       qc.invalidateQueries({ queryKey: ["accounting"] })
@@ -886,23 +891,70 @@ const OrderProcessingPage = () => {
                             {r.can_allocate ? (
                               <button
                                 type="button"
-                                onClick={() => allocateMutation.mutate(r.order_id)}
+                                onClick={() => allocateMutation.mutate({ orderId: r.order_id, force: false })}
                                 disabled={allocateMutation.isPending}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-md animate-pulse ring-2 ring-emerald-400 ring-offset-1 transition-all cursor-pointer"
                               >
                                 ⚡ Allocate Now
                               </button>
                             ) : (
-                              <Tooltip
-                                content={
-                                  r.shortages?.map((s) => `${s.title}: needed ${s.requested}, only ${s.available} in warehouse`).join("; ") ||
-                                  "Awaiting warehouse restock"
-                                }
-                              >
-                                <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-2 py-0.5 rounded font-medium">
-                                  ⏳ Awaiting Restock ({r.shortages?.[0]?.available ?? 0} in stock)
-                                </span>
-                              </Tooltip>
+                              <>
+                                <Tooltip
+                                  content={
+                                    r.shortages
+                                      ?.map((s) => {
+                                        let txt = `${s.title}: needed ${s.requested}, available ${s.available}`
+                                        if (
+                                          s.stocked !== undefined &&
+                                          s.reserved !== undefined &&
+                                          s.reserved > 0
+                                        ) {
+                                          txt += ` (${s.stocked} on shelf, ${s.reserved} reserved`
+                                          if (s.reserved_by?.length) {
+                                            txt += ` by ${s.reserved_by.map((rb) => `#${rb.display_id ?? "?"} ${rb.customer}`).join(", ")}`
+                                          }
+                                          txt += `)`
+                                        }
+                                        return txt
+                                      })
+                                      .join("; ") || "Awaiting warehouse restock"
+                                  }
+                                >
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 px-2 py-0.5 rounded font-medium">
+                                    ⏳ Awaiting Restock (
+                                    {r.shortages?.[0]?.reserved_by?.length ? (
+                                      <>
+                                        {r.shortages[0].stocked} on shelf · reserved by{" "}
+                                        <span className="font-bold underline decoration-amber-400">
+                                          #{r.shortages[0].reserved_by[0].display_id ?? "?"}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      `${r.shortages?.[0]?.available ?? 0} in stock`
+                                    )}
+                                    )
+                                  </span>
+                                </Tooltip>
+                                {r.shortages?.some((s) => (s.stocked ?? 0) > 0) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (
+                                        window.confirm(
+                                          `Order #${r.display_id} has units physically on shelf, but reserved by other order(s). Force-allocating will allocate stock to #${r.display_id}. Proceed?`
+                                        )
+                                      ) {
+                                        allocateMutation.mutate({ orderId: r.order_id, force: true })
+                                      }
+                                    }}
+                                    disabled={allocateMutation.isPending}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:text-amber-200 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 rounded border border-amber-300 dark:border-amber-700 transition-colors cursor-pointer"
+                                    title="Stock is on shelf but reserved by earlier order. Click to force allocate."
+                                  >
+                                    ⚡ Force Allocate
+                                  </button>
+                                )}
+                              </>
                             )}
                           </div>
                         )}
@@ -1097,15 +1149,34 @@ const OrderProcessingPage = () => {
                     {/* Stop the click here: this cell acts on the row, it doesn't open it. */}
                     <Table.Cell className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
-                        {r.order_status === "backorder" && r.can_allocate && (
-                          <button
-                            type="button"
-                            onClick={() => allocateMutation.mutate(r.order_id)}
-                            disabled={allocateMutation.isPending}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-sm animate-pulse ring-2 ring-emerald-400 ring-offset-1 transition-all cursor-pointer"
-                          >
-                            ⚡ Allocate Now
-                          </button>
+                        {r.order_status === "backorder" && (
+                          r.can_allocate ? (
+                            <button
+                              type="button"
+                              onClick={() => allocateMutation.mutate({ orderId: r.order_id, force: false })}
+                              disabled={allocateMutation.isPending}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-sm animate-pulse ring-2 ring-emerald-400 ring-offset-1 transition-all cursor-pointer"
+                            >
+                              ⚡ Allocate Now
+                            </button>
+                          ) : r.shortages?.some((s) => (s.stocked ?? 0) > 0) ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    `Order #${r.display_id} has units physically on shelf, but reserved by other order(s). Force-allocating will allocate stock to #${r.display_id}. Proceed?`
+                                  )
+                                ) {
+                                  allocateMutation.mutate({ orderId: r.order_id, force: true })
+                                }
+                              }}
+                              disabled={allocateMutation.isPending}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:text-amber-200 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 rounded border border-amber-300 dark:border-amber-700 transition-colors cursor-pointer"
+                            >
+                              ⚡ Force Allocate
+                            </button>
+                          ) : null
                         )}
                         <DropdownMenu>
                         <DropdownMenu.Trigger asChild>

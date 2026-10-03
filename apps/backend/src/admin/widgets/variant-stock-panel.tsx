@@ -359,10 +359,42 @@ export function VariantStockPanel({ variantId, cur = "bdt" }: { variantId: strin
       </div>
 
       {!isLoading && reservedQty > 0 && (
-        <Text size="xsmall" className="text-ui-fg-muted">
-          {reservedQty} unit(s) are held for orders that haven't shipped yet. They're still on the
-          shelf — stock only leaves when you fulfil.
-        </Text>
+        <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-2.5 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <div className="flex items-center justify-between font-medium">
+            <span>{reservedQty} unit(s) reserved for unfulfilled orders:</span>
+            <span className="text-[11px] text-ui-fg-muted font-normal">Still on shelf until fulfilled</span>
+          </div>
+          <div className="mt-1.5 flex flex-col gap-1">
+            {(stock?.reservations ?? []).length > 0 ? (
+              stock!.reservations!.map((res) => (
+                <div key={res.id} className="flex items-center justify-between text-xs py-0.5">
+                  <span className="truncate">
+                    {res.display_id ? (
+                      <a
+                        href={`/admin/orders/${res.order_id}`}
+                        className="font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Order #{res.display_id}
+                      </a>
+                    ) : (
+                      <span className="font-medium">Order</span>
+                    )}
+                    {" · "}{res.customer_name}
+                  </span>
+                  <Badge size="2xsmall" color="orange" className="ml-2 font-semibold shrink-0">
+                    {res.quantity} reserved
+                  </Badge>
+                </div>
+              ))
+            ) : (
+              <Text size="xsmall" className="text-ui-fg-muted">
+                {reservedQty} unit(s) are held for orders that haven't shipped yet.
+              </Text>
+            )}
+          </div>
+        </div>
       )}
 
       {!isLoading && stock?.setup_problem && (

@@ -53,16 +53,75 @@ export async function GET(
   })
 
   const seen = new Set<string>()
+  const inventoryItemIds: string[] = []
   let currentQty = 0
   let reserved = 0
   for (const link of (data?.[0] as any)?.inventory_items ?? []) {
     const itemId = link.inventory_item_id
     if (!itemId || seen.has(itemId)) continue
     seen.add(itemId)
+    inventoryItemIds.push(itemId)
     for (const lvl of link.inventory?.location_levels ?? []) {
       if (!location || lvl.location_id !== location.id) continue
       currentQty += Number(lvl.stocked_quantity) || 0
       reserved += Number(lvl.reserved_quantity) || 0
+    }
+  }
+
+  // Load details of orders that have active reservations for this variant
+  const reservationDetails: Array<{
+    id: string
+    quantity: number
+    order_id: string | null
+    display_id: number | null
+    customer_name: string
+    created_at: string
+  }> = []
+
+  if (reserved > 0 && inventoryItemIds.length) {
+    try {
+      const inventory: any = req.scope.resolve(Modules.INVENTORY)
+      const resItems = await inventory.listReservationItems({
+        inventory_item_id: inventoryItemIds,
+      })
+      const lineItemIds = (resItems ?? []).map((r: any) => r.line_item_id).filter(Boolean)
+      if (lineItemIds.length) {
+        const { data: lineItems } = await query.graph({
+          entity: "order_line_item",
+          fields: [
+            "id",
+            "order.id",
+            "order.display_id",
+            "order.created_at",
+            "order.shipping_address.first_name",
+            "order.shipping_address.last_name",
+            "order.customer.first_name",
+            "order.customer.last_name",
+          ],
+          filters: { id: lineItemIds },
+        })
+        const liMap = new Map((lineItems ?? []).map((li: any) => [li.id, li]))
+        for (const r of resItems ?? []) {
+          const li: any = liMap.get(r.line_item_id)
+          const ord = li?.order
+          const custName =
+            [ord?.shipping_address?.first_name, ord?.shipping_address?.last_name]
+              .filter(Boolean)
+              .join(" ") ||
+            [ord?.customer?.first_name, ord?.customer?.last_name].filter(Boolean).join(" ") ||
+            "Customer"
+          reservationDetails.push({
+            id: r.id,
+            quantity: Number(r.quantity) || 1,
+            order_id: ord?.id ?? null,
+            display_id: ord?.display_id != null ? Number(ord.display_id) : null,
+            customer_name: custName,
+            created_at: r.created_at,
+          })
+        }
+      }
+    } catch {
+      // Best-effort reservation enrichment
     }
   }
 
@@ -88,6 +147,7 @@ export async function GET(
     latest_freight: latestFreight,
     latest_landed_cost: latestLandedCost,
     packaging_cost: costRow ? Number(costRow.packaging_cost) : 0,
+    reservations: reservationDetails,
     batches,
     movements: (movements ?? []).map((m: any) => ({
       id: m.id,

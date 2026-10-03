@@ -11,7 +11,7 @@ import { ORDER_PROCESSING_MODULE } from "../../../../modules/orderProcessing"
  */
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const actorId = req.auth_context?.actor_id ?? null
-  const { order_ids } = (req.body ?? {}) as { order_ids: string[] }
+  const { order_ids, force } = (req.body ?? {}) as { order_ids: string[]; force?: boolean }
 
   if (!Array.isArray(order_ids) || !order_ids.length) {
     return res.status(400).json({ error: "order_ids array is required." })
@@ -26,8 +26,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   for (const orderId of order_ids) {
     try {
-      const reserveResult = await reserveOrderItems(req.scope, orderId)
-      if (reserveResult.shortages.length > 0) {
+      const reserveResult = await reserveOrderItems(req.scope, orderId, { force: Boolean(force) })
+      if (!force && reserveResult.shortages.length > 0) {
         failed.push({
           order_id: orderId,
           reason: `Insufficient stock for ${reserveResult.shortages

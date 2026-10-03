@@ -177,7 +177,8 @@ export async function checkShortages(
  */
 export async function reserveOrderItems(
   container: MedusaContainer,
-  orderId: string
+  orderId: string,
+  opts?: { force?: boolean }
 ): Promise<{ reserved: number; skipped: number; shortages: AvailabilityProblem[] }> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const inventory: any = container.resolve(Modules.INVENTORY)
@@ -241,7 +242,7 @@ export async function reserveOrderItems(
     })
     const available = num(level?.stocked_quantity) - num(level?.reserved_quantity)
 
-    if (available < needed) {
+    if (!opts?.force && available < needed) {
       shortages.push({
         variant_id: it.variant_id,
         title: it.title ?? v.title,
@@ -261,9 +262,18 @@ export async function reserveOrderItems(
   }
 
   if (toCreate.length) {
-    await createReservationsWorkflow(container as any).run({
-      input: { reservations: toCreate },
-    })
+    try {
+      await createReservationsWorkflow(container as any).run({
+        input: { reservations: toCreate },
+      })
+    } catch (workflowErr: any) {
+      // Fallback: create reservation items directly via inventory module if workflow validation blocked it
+      try {
+        await inventory.createReservationItems(toCreate)
+      } catch (directErr: any) {
+        throw new Error(directErr?.message || workflowErr?.message || "Failed to create reservations")
+      }
+    }
   }
 
   return { reserved: toCreate.length, skipped, shortages }

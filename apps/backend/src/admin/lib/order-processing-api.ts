@@ -190,7 +190,14 @@ export type OrderRow = {
   /** Backorder and allocation info */
   is_backorder?: boolean
   can_allocate?: boolean
-  shortages?: Array<{ title: string; requested: number; available: number }>
+  shortages?: Array<{
+    title: string
+    requested: number
+    available: number
+    stocked?: number
+    reserved?: number
+    reserved_by?: Array<{ display_id: number | null; customer: string; quantity: number; order_id?: string | null }>
+  }>
   /** What this row may legally move to next — type-aware, computed server-side. */
   allowed_next: OrderStatusKey[]
 }
@@ -277,16 +284,16 @@ export const opApi = {
   update: (orderId: string, body: unknown) =>
     rbacFetch(`/order-processing/${orderId}`, { method: "POST", body: JSON.stringify(body) }),
 
-  allocate: (orderId: string) =>
+  allocate: (orderId: string, opts: { force?: boolean } = {}) =>
     rbacFetch<{ success: boolean; message: string; order: OrderRow }>(
       `/order-processing/${orderId}/allocate`,
-      { method: "POST" }
+      { method: "POST", body: JSON.stringify(opts) }
     ),
 
-  allocateBulk: (orderIds: string[]) =>
+  allocateBulk: (orderIds: string[], opts: { force?: boolean } = {}) =>
     rbacFetch<{ allocated_count: number; allocated: string[]; failed_count: number; failed: any[]; message: string }>(
       `/order-processing/allocate-bulk`,
-      { method: "POST", body: JSON.stringify({ order_ids: orderIds }) }
+      { method: "POST", body: JSON.stringify({ order_ids: orderIds, ...opts }) }
     ),
 
   resolveDelivered: (opts: { order_ids?: string[]; display_ids?: number[] } = {}) =>
