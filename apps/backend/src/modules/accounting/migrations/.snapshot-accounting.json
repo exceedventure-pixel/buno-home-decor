@@ -375,6 +375,8 @@
             "other_expense",
             "refund",
             "production_cost",
+            "salary",
+            "project_payment",
             "other_income"
           ],
           "mappedType": "enum"

@@ -102,6 +102,8 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       write_off,
       overhead,
       marketing: exp.marketing,
+      salary: exp.salary,
+      project_payment: exp.project_payment,
       other_expense: exp.other_expense,
       refunds: exp.refund,
     },

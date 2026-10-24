@@ -6,6 +6,7 @@ import { useState } from "react"
 import { usePermissions } from "../../lib/permissions"
 import { useSystemMode } from "../../lib/system-mode"
 import { CashBookSection } from "./sections/cash-book-section"
+import { CourierSection } from "./sections/courier-section"
 import { DashboardSection } from "./sections/dashboard-section"
 import { FixedAssetsSection } from "./sections/fixed-assets-section"
 import { MarketingSection } from "./sections/marketing-section"
@@ -13,6 +14,7 @@ import { OrphanWarning } from "../../components/orphan-warning"
 import { OperationalSection } from "./sections/operational-section"
 import { PackagingSection } from "./sections/packaging-section"
 import { PartnersSection } from "./sections/partners-section"
+import { PayrollSection } from "./sections/payroll-section"
 import { RestockSection } from "./sections/restock-section"
 
 const AccountingPage = () => {
@@ -99,6 +101,8 @@ const AccountingPage = () => {
               <Tabs.Trigger value="restock">Restock</Tabs.Trigger>
               <Tabs.Trigger value="packaging">Packaging</Tabs.Trigger>
               <Tabs.Trigger value="marketing">Marketing</Tabs.Trigger>
+              <Tabs.Trigger value="courier">Courier Fees</Tabs.Trigger>
+              <Tabs.Trigger value="payroll">Salaries & Projects</Tabs.Trigger>
               <Tabs.Trigger value="operational">Operational Expenses</Tabs.Trigger>
               <Tabs.Trigger value="cash-book">Cash Book</Tabs.Trigger>
             </Tabs.List>
@@ -122,6 +126,12 @@ const AccountingPage = () => {
             </Tabs.Content>
             <Tabs.Content value="marketing">
               <MarketingSection />
+            </Tabs.Content>
+            <Tabs.Content value="courier">
+              <CourierSection />
+            </Tabs.Content>
+            <Tabs.Content value="payroll">
+              <PayrollSection />
             </Tabs.Content>
             <Tabs.Content value="operational">
               <OperationalSection />

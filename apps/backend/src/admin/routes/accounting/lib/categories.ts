@@ -24,8 +24,10 @@ export type CategoryMeta = {
 export const MANUAL_CATEGORIES = ["capital_contribution", "partner_drawing"] as const
 
 // The manual P&L expenses, recorded from the Operational Expenses tab.
-// (courier_fee is manual for now; a delivery-partner auto-pull is a planned follow-up.)
-export const OPERATIONAL_CATEGORIES = ["other_expense", "courier_fee", "refund"] as const
+export const OPERATIONAL_CATEGORIES = ["other_expense", "refund"] as const
+
+// Employee salaries and contractor project-based payments.
+export const PAYROLL_CATEGORIES = ["salary", "project_payment"] as const
 
 export const CATEGORY_META: Record<string, CategoryMeta> = {
   capital_contribution: {
@@ -70,13 +72,25 @@ export const CATEGORY_META: Record<string, CategoryMeta> = {
     label: "Courier fee",
     klass: "expense",
     direction: "out",
-    help: "Paid to the courier. A real expense — Medusa does not record what delivery costs you.",
+    help: "Paid to the courier. A real expense — recorded from the Courier Fees tab or Order Processing.",
+  },
+  salary: {
+    label: "Employee salary",
+    klass: "expense",
+    direction: "out",
+    help: "Monthly or regular salary paid to employees. Added from Salaries & Projects tab.",
+  },
+  project_payment: {
+    label: "Project-based payment",
+    klass: "expense",
+    direction: "out",
+    help: "Payment for freelance, contractor, or project-based work. Added from Salaries & Projects tab.",
   },
   other_expense: {
     label: "Other expense",
     klass: "expense",
     direction: "out",
-    help: "Rent, utilities, salaries. A real expense.",
+    help: "Rent, utilities, office running costs. A real expense.",
   },
   refund: {
     label: "Refund (outside Medusa only)",

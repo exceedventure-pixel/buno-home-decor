@@ -20,6 +20,7 @@ export type CreateLedgerEntryInput = {
   description?: string | null
   reference?: string | null
   partner_id?: string | null
+  metadata?: Record<string, any> | null
 }
 
 /**
@@ -84,6 +85,7 @@ export const createLedgerEntryStep = createStep(
         partner_id: input.partner_id ?? null,
         source_type: "manual",
         source_id: null,
+        metadata: input.metadata ?? null,
       },
     ])
 

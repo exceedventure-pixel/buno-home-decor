@@ -74,9 +74,9 @@ export function OperationalSection() {
         <div>
           <Text weight="plus">Operational expenses</Text>
           <Text size="small" className="text-ui-fg-subtle">
-            Real running costs — rent, utilities, salaries, courier fees, refunds. Each one
-            reduces net profit. (Courier fees are manual for now; automatic pull from your
-            delivery partner is planned.)
+            General running costs — rent, utilities, office supplies, software, and outside refunds.
+            Each one reduces net profit. (Courier fees and employee / project payments are managed
+            in their own dedicated tabs.)
           </Text>
         </div>
         <Button size="small" variant="secondary" onClick={() => setOpen(true)}>

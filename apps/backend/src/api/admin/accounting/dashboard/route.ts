@@ -206,6 +206,8 @@ export async function GET(
       gross_profit: gross,
       marketing: periodExpenses.marketing,
       courier_fee: periodExpenses.courier_fee,
+      salary: periodExpenses.salary,
+      project_payment: periodExpenses.project_payment,
       other_expense: periodExpenses.other_expense,
       refund: periodExpenses.refund,
       // What you spent on packaging in the period — a straight expense on the purchase date.

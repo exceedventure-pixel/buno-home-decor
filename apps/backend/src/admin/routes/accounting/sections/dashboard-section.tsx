@@ -171,7 +171,7 @@ export function DashboardSection() {
           <Text size="xsmall" className="text-ui-fg-muted">
             Inside operating expenses — these add up to {money(p.operating_expenses, cur)}
           </Text>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <Kpi
               label="Packaging"
               value={money(p.packaging, cur)}
@@ -180,9 +180,15 @@ export function DashboardSection() {
             />
             <Kpi label="Marketing / ads" value={money(p.marketing, cur)} accent="red" />
             <Kpi
+              label="Salaries & Projects"
+              value={money((p.salary ?? 0) + (p.project_payment ?? 0), cur)}
+              hint="payroll & contractor pay"
+              accent="red"
+            />
+            <Kpi
               label="Operational"
               value={money(p.other_expense, cur)}
-              hint="rent, utilities, salaries"
+              hint="rent, utilities"
               accent="red"
             />
             <Kpi

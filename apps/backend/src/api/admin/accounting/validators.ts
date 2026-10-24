@@ -26,6 +26,7 @@ export const CreateLedgerEntrySchema = z
     description: z.string().max(500).nullish(),
     reference: z.string().max(200).nullish(),
     partner_id: z.string().nullish(),
+    metadata: z.record(z.any()).nullish(),
   })
   .strict()
 export type CreateLedgerEntrySchema = z.infer<typeof CreateLedgerEntrySchema>
@@ -42,6 +43,7 @@ export const UpdateLedgerEntrySchema = z
     description: z.string().max(500).nullish(),
     reference: z.string().max(200).nullish(),
     partner_id: z.string().nullish(),
+    metadata: z.record(z.any()).nullish(),
   })
   .strict()
 export type UpdateLedgerEntrySchema = z.infer<typeof UpdateLedgerEntrySchema>

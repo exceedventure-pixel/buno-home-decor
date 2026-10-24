@@ -27,6 +27,8 @@ type Insights = {
     write_off: number
     overhead: number
     marketing: number
+    salary?: number
+    project_payment?: number
     other_expense: number
     refunds: number
   }
@@ -297,9 +299,9 @@ const SalesInsightsPage = () => {
             {advanced && (
             <div className="flex flex-col gap-y-2">
               <Text size="xsmall" className="text-ui-fg-muted">
-                Inside overheads — these four add up to {money(data.costs.overhead, cur)}
+                Inside overheads — these add up to {money(data.costs.overhead, cur)}
               </Text>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                 <Kpi
                   label="Packaging"
                   value={money(data.costs.packaging, cur)}
@@ -314,11 +316,18 @@ const SalesInsightsPage = () => {
                   info="Every ledger entry in the Marketing / ads category, dated inside this period."
                 />
                 <Kpi
+                  label="Salaries & Projects"
+                  value={money((data.costs.salary ?? 0) + (data.costs.project_payment ?? 0), cur)}
+                  hint="payroll & contractor pay"
+                  accent="red"
+                  info="Staff salaries and project-based contractor payments recorded in the Salaries & Projects tab."
+                />
+                <Kpi
                   label="Operational"
                   value={money(data.costs.other_expense, cur)}
-                  hint="rent, utilities, salaries"
+                  hint="rent, utilities"
                   accent="red"
-                  info="The 'Other expense' ledger category — rent, utilities, salaries. Note the Operational Expenses TAB also lists courier fee and refunds; those are counted separately here, so this card is the rent/utilities/salaries part only."
+                  info="The 'Other expense' ledger category — rent, utilities, office running costs."
                 />
                 <Kpi
                   label="Refunds"

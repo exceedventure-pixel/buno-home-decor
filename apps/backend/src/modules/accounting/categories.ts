@@ -46,6 +46,9 @@ export const LEDGER_CATEGORIES = [
   // when it sells), made-to-order goods ship immediately, so their cost is an expense straight
   // away — and it is that order's cost of goods.
   "production_cost",
+  // Staff and contractor payments.
+  "salary",
+  "project_payment",
 
   // Real P&L income that Medusa knows nothing about: a courier paying you back for a parcel
   // they destroyed, scrap sales, supplier credits. Without this there is literally nowhere to
@@ -117,11 +120,23 @@ export const CATEGORY_META: Record<LedgerCategory, CategoryMeta> = {
     direction: "out",
     help: "Paid to Pathao/Steadfast/RedX. A real expense — Medusa does not record what delivery costs you.",
   },
+  salary: {
+    label: "Employee salary",
+    klass: "expense",
+    direction: "out",
+    help: "Staff salary payment. A real expense — reduces net profit.",
+  },
+  project_payment: {
+    label: "Project-based payment",
+    klass: "expense",
+    direction: "out",
+    help: "Contractor, craftsman or project-based fee. A real expense — reduces net profit.",
+  },
   other_expense: {
     label: "Other expense",
     klass: "expense",
     direction: "out",
-    help: "Rent, utilities, salaries. A real expense.",
+    help: "Rent, utilities, office running costs. A real expense.",
   },
   refund: {
     label: "Refund (outside Medusa only)",

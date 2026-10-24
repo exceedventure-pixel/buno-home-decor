@@ -20,7 +20,8 @@ export type LedgerEntry = {
   description: string | null
   reference: string | null
   partner_id: string | null
-  source_type: "manual" | "fixed_asset" | "marketing_spend" | "restock"
+  source_type: "manual" | "fixed_asset" | "marketing_spend" | "restock" | "order" | "production"
+  metadata?: Record<string, any> | null
   /** Server-decided: a row owned by a register (or by a stock batch) can't be touched here. */
   can_edit: boolean
   can_delete: boolean
@@ -167,6 +168,8 @@ export type Dashboard = {
     marketing: number
     /** Inside `delivery_margin`, deliberately NOT in operating expenses. */
     courier_fee: number
+    salary?: number
+    project_payment?: number
     other_expense: number
     refund: number
     /** Packaging bought in the period — expensed on the purchase date. */
