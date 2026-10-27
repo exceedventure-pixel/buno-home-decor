@@ -1,7 +1,7 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { MedusaError } from "@medusajs/framework/utils"
 
-import { computeOrderEconomics } from "../../../../lib/orders/order-economics"
+import { computeOrderEconomics, clearOrderEconomicsCache } from "../../../../lib/orders/order-economics"
 import { allowedTransitions } from "../../../../modules/orderProcessing/constants"
 import { ORDER_PROCESSING_MODULE } from "../../../../modules/orderProcessing"
 import {
@@ -146,6 +146,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     })
   }
 
+  clearOrderEconomicsCache()
   const [econ] = await computeOrderEconomics(req.scope, { order_id: orderId })
   res.json({
     order: econ,

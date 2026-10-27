@@ -9,7 +9,8 @@ import { createStep, StepResponse } from "@medusajs/framework/workflows-sdk"
 
 import { requireSellableLocation } from "../../../lib/inventory/stock-location"
 import { bookCourierParcel } from "../../../lib/orders/courier-booking"
-import { computeOrderEconomics } from "../../../lib/orders/order-economics"
+import { computeOrderEconomics, clearOrderEconomicsCache } from "../../../lib/orders/order-economics"
+import { clearFifoCostingCache } from "../../../lib/insights/fifo-costing"
 import { reserveOrderItems } from "../../../lib/orders/reserve"
 import { canTransition, issueWritesOffGoods } from "../../../lib/orders/status"
 import { refundOrder } from "../../../lib/orders/refund"
@@ -197,6 +198,9 @@ export const transitionOrderStep = createStep(
         note: input.note ?? null,
       },
     ])
+
+    clearOrderEconomicsCache()
+    clearFifoCostingCache()
 
     return new StepResponse(
       { order_id: input.order_id, from, to: input.to },

@@ -3,6 +3,8 @@ import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils"
 
 import { ORDER_PROCESSING_MODULE } from "../modules/orderProcessing"
 import { checkShortages } from "../lib/orders/reserve"
+import { clearOrderEconomicsCache } from "../lib/orders/order-economics"
+import { clearFifoCostingCache } from "../lib/insights/fifo-costing"
 
 /**
  * The other half of "in sync".
@@ -94,6 +96,8 @@ export default async function orderProcessingSync({
         },
       ])
     }
+    clearOrderEconomicsCache()
+    clearFifoCostingCache()
   } catch (e: any) {
     logger?.error(`[order-processing-sync] ${event.name} ${orderId}: ${e.message}`)
   }

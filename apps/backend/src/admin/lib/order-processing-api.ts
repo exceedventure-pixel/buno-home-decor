@@ -296,6 +296,18 @@ export const opApi = {
       { method: "POST", body: JSON.stringify({ order_ids: orderIds, ...opts }) }
     ),
 
+  bulkStatus: (orderIds: string[], to: OrderStatusKey, note?: string | null) =>
+    rbacFetch<{
+      moved_count: number
+      moved: string[]
+      failed_count: number
+      failed: Array<{ order_id: string; message: string }>
+      message: string
+    }>("/order-processing/bulk-status", {
+      method: "POST",
+      body: JSON.stringify({ order_ids: orderIds, to, note }),
+    }),
+
   resolveDelivered: (opts: { order_ids?: string[]; display_ids?: number[] } = {}) =>
     rbacFetch<{
       success: boolean

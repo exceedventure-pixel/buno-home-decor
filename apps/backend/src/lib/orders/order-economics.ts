@@ -167,10 +167,27 @@ export function basicModeCogs(
   }, 0)
 }
 
+let cachedEconomics: {
+  result: OrderEconomics[]
+  timestamp: number
+  key: string
+} | null = null
+const ECONOMICS_CACHE_TTL_MS = 15_000 // 15 seconds
+
+export function clearOrderEconomicsCache(): void {
+  cachedEconomics = null
+}
+
 export async function computeOrderEconomics(
   container: MedusaContainer,
   opts?: { order_id?: string; from?: Date; to?: Date }
 ): Promise<OrderEconomics[]> {
+  const isFullList = !opts?.order_id
+  const cacheKey = `${opts?.from ? opts.from.getTime() : ""}_${opts?.to ? opts.to.getTime() : ""}`
+  if (isFullList && cachedEconomics && cachedEconomics.key === cacheKey && Date.now() - cachedEconomics.timestamp < ECONOMICS_CACHE_TTL_MS) {
+    return cachedEconomics.result
+  }
+
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const opSvc: any = container.resolve(ORDER_PROCESSING_MODULE)
 
@@ -184,7 +201,7 @@ export async function computeOrderEconomics(
    * from) and report its entire revenue as profit.
    */
   const mode = await getSystemMode(container)
-  const fifo = await computeFifoCosting(container)
+  const fifo = mode === "advanced" ? await computeFifoCosting(container) : ({ cogs_by_ref: new Map() } as any)
 
   // Basic mode only: variant_id -> cost price.
   const simpleCost = new Map<string, number>()
@@ -198,7 +215,9 @@ export async function computeOrderEconomics(
     }
   }
 
-  const workflows = await opSvc.listOrderWorkflows({}, { take: 100000 })
+  const workflows = opts?.order_id
+    ? await opSvc.listOrderWorkflows({ order_id: opts.order_id })
+    : await opSvc.listOrderWorkflows({}, { take: 100000 })
   const wfByOrder = new Map<string, any>(workflows.map((w: any) => [w.order_id, w]))
 
   const filters: Record<string, unknown> = {}
@@ -224,6 +243,15 @@ export async function computeOrderEconomics(
    */
   const PAGE = 200
   const paged = async (fields: string[]): Promise<any[]> => {
+    if (opts?.order_id) {
+      const { data } = await query.graph({
+        entity: "order",
+        fields,
+        filters,
+        pagination: { take: 1 },
+      })
+      return data ?? []
+    }
     const out: any[] = []
     let skip = 0
     for (;;) {
@@ -419,7 +447,7 @@ export async function computeOrderEconomics(
     }
   }
 
-  return orders.map((o: any): OrderEconomics => {
+  const calculated: OrderEconomics[] = orders.map((o: any): OrderEconomics => {
     const wf = wfByOrder.get(o.id)
     const orderType: OrderType = (wf?.order_type as OrderType) ?? "ready_stock"
     const stage: StoredStage = (wf?.stage as StoredStage) ?? "new_order"
@@ -752,4 +780,14 @@ export async function computeOrderEconomics(
         : null,
     }
   })
+
+  if (isFullList) {
+    cachedEconomics = {
+      result: calculated,
+      timestamp: Date.now(),
+      key: cacheKey,
+    }
+  }
+
+  return calculated
 }

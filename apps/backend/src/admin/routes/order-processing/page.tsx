@@ -227,7 +227,7 @@ const OrderProcessingPage = () => {
     onMutate: async (m: PendingMove) => {
       // Cancel any in-flight refetches so they don't overwrite the optimistic update.
       await qc.cancelQueries({ queryKey: ["order-processing", "all"] })
-      const prev = qc.getQueryData<{ orders: typeof rows }>([" order-processing", "all"])
+      const prev = qc.getQueryData<{ orders: typeof rows }>(["order-processing", "all"])
       qc.setQueryData<{ orders: typeof rows; counts: any; type_counts: any; total: any; totals: any }>(
         ["order-processing", "all"],
         (old) => {
@@ -266,35 +266,44 @@ const OrderProcessingPage = () => {
    */
   const bulk = useMutation({
     mutationFn: async (to: OrderStatusKey) => {
-      const targets = rows.filter((r) => selected.has(r.order_id))
-      let moved = 0
-      const failed: { displayId: number; message: string }[] = []
-      for (const r of targets) {
-        try {
-          await opApi.update(r.order_id, { order_status: to })
-          moved++
-        } catch (e: any) {
-          failed.push({ displayId: r.display_id, message: e?.message ?? "failed" })
-        }
-      }
-      return { moved, failed }
+      const targetIds = Array.from(selected)
+      return opApi.bulkStatus(targetIds, to)
     },
-    onSuccess: ({ moved, failed }) => {
-      if (moved) toast.success(`${moved} order(s) updated — stock and cash follow automatically`)
-      if (failed.length) {
-        toast.error(
-          `${failed.length} could not move: ` +
-            failed.slice(0, 3).map((f) => `#${f.displayId} (${f.message})`).join("; ") +
-            (failed.length > 3 ? "…" : "")
-        )
+    onMutate: async (to: OrderStatusKey) => {
+      await qc.cancelQueries({ queryKey: ["order-processing", "all"] })
+      const prev = qc.getQueryData<{ orders: typeof rows; counts: any; type_counts: any; total: any; totals: any }>(["order-processing", "all"])
+      if (prev) {
+        qc.setQueryData(["order-processing", "all"], {
+          ...prev,
+          orders: prev.orders.map((r) =>
+            selected.has(r.order_id) ? { ...r, order_status: to } : r
+          ),
+        })
       }
       setBulkTo(null)
+      return { prev }
+    },
+    onSuccess: (data) => {
+      if (data.moved_count > 0) {
+        toast.success(`${data.moved_count} order(s) updated — stock and cash follow automatically`)
+      }
+      if (data.failed?.length) {
+        toast.error(
+          `${data.failed.length} could not move: ` +
+            data.failed.slice(0, 3).map((f) => f.message).join("; ") +
+            (data.failed.length > 3 ? "…" : "")
+        )
+      }
       setSelected(new Set())
       qc.invalidateQueries({ queryKey: ["order-processing"] })
       qc.invalidateQueries({ queryKey: ["orders"] })
       qc.invalidateQueries({ queryKey: ["accounting"] })
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error, _to, ctx: any) => {
+      toast.error(e.message)
+      if (ctx?.prev) qc.setQueryData(["order-processing", "all"], ctx.prev)
+      setBulkTo(null)
+    },
   })
 
   const allocateMutation = useMutation({
@@ -349,7 +358,7 @@ const OrderProcessingPage = () => {
     // Keep the queue live: pick up courier-driven status changes and edits from the order pages
     // without a manual refresh.
     refetchOnWindowFocus: true,
-    refetchInterval: 15000,
+    refetchInterval: 30000,
   })
 
   const everything = useMemo(() => data?.orders ?? [], [data])

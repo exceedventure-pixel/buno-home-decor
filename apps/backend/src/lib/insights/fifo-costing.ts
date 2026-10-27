@@ -274,6 +274,13 @@ export function replayFifo(
   }
 }
 
+let cachedFifo: { result: FifoCosting; timestamp: number } | null = null
+const FIFO_CACHE_TTL_MS = 60_000 // 60 seconds
+
+export function clearFifoCostingCache(): void {
+  cachedFifo = null
+}
+
 /**
  * Loads the batches, write-offs and orders, then delegates to `replayFifo`. Orders are read
  * in full (FIFO depends on the whole history, not just the reporting window); `range` only
@@ -283,6 +290,10 @@ export async function computeFifoCosting(
   container: MedusaContainer,
   range?: CostingRange
 ): Promise<FifoCosting> {
+  if (!range && cachedFifo && Date.now() - cachedFifo.timestamp < FIFO_CACHE_TTL_MS) {
+    return cachedFifo.result
+  }
+
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const costSvc: any = container.resolve(PRODUCT_COST_MODULE)
 
@@ -441,5 +452,10 @@ export async function computeFifoCosting(
   result.partially_fulfilled_orders = partiallyFulfilledOrders
   result.untracked_units = untrackedUnits
   result.untracked_variants = untrackedVariants.size
+
+  if (!range) {
+    cachedFifo = { result, timestamp: Date.now() }
+  }
+
   return result
 }
